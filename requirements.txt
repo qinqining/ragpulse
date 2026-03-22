@@ -1,0 +1,30 @@
+# ragpulse 核心依赖（已剥离 RAGFlow Infinity / ES 等重型栈）
+python-dotenv>=1.0.0
+requests>=2.28.0
+numpy>=1.24.0
+Pillow>=10.0.0
+chardet>=5.0.0
+jieba>=0.42.1
+opencc-python-reimplemented>=0.1.7
+roman-numbers>=1.0.0
+word2number>=1.1
+cn2an>=0.5.0
+fastapi>=0.110.0
+python-multipart>=0.0.9
+uvicorn[standard]>=0.27.0
+chromadb>=0.4.0
+beartype>=0.17.0
+pypdf>=4.0.0
+python-docx>=1.1.0
+
+# deepdoc PDF（RAGFlowPdfParser）入库建议一并安装（缺一都会在 import 阶段失败）：
+pdfplumber>=0.11.0
+xgboost>=2.0.0
+scikit-learn>=1.3.0
+onnxruntime>=1.16.0
+huggingface-hub>=0.20.0
+opencv-python-headless>=4.8.0
+shapely>=2.0.0
+pyclipper>=1.3.0
+six>=1.16.0
+# 其他按报错补：torch（可选 GPU）、openpyxl 等

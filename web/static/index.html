@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ragpulse — 入库与检索</title>
+  <style>
+    :root { --bg: #0f1419; --card: #1a2332; --text: #e7ecf3; --muted: #8b9bb4; --accent: #3d8bfd; --ok: #3fb950; --warn: #d29922; }
+    * { box-sizing: border-box; }
+    body { font-family: ui-sans-serif, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem; line-height: 1.5; }
+    h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.5rem; }
+    h2 { font-size: 1rem; margin: 0 0 0.75rem; }
+    p.note { color: var(--muted); font-size: 0.875rem; margin: 0 0 1.25rem; }
+    .card { background: var(--card); border-radius: 10px; padding: 1.25rem; max-width: 920px; margin-bottom: 1rem; border: 1px solid #2d3a4d; }
+    label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+    input, textarea, button, select { width: 100%; padding: 0.6rem 0.75rem; border-radius: 8px; border: 1px solid #3d4f66; background: #0d1117; color: var(--text); font-size: 0.9rem; }
+    textarea { min-height: 72px; resize: vertical; font-family: inherit; }
+    .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem; }
+    @media (max-width: 900px) { .row { grid-template-columns: 1fr; } }
+    button { background: var(--accent); border: none; font-weight: 600; cursor: pointer; margin-top: 0.5rem; }
+    button.secondary { background: #388bfd44; border: 1px solid var(--accent); }
+    button:hover { filter: brightness(1.08); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    pre { background: #0d1117; padding: 1rem; border-radius: 8px; overflow: auto; font-size: 0.8rem; border: 1px solid #2d3a4d; white-space: pre-wrap; word-break: break-word; }
+    .status { font-size: 0.8rem; margin-top: 0.5rem; }
+    .status.ok { color: var(--ok); }
+    .status.warn { color: var(--warn); }
+    .hit { border-left: 3px solid var(--accent); padding-left: 0.75rem; margin: 0.75rem 0; }
+    .hit .meta { font-size: 0.75rem; color: var(--muted); }
+    a { color: var(--accent); }
+    input[type="file"] { padding: 0.4rem; }
+    .checks label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; margin-top: 0.5rem; }
+    .checks input { width: auto; }
+  </style>
+</head>
+<body>
+  <h1>ragpulse — 入库与检索</h1>
+  <p class="note">
+    入库：<code>POST /rag/ingest</code> 与检索 <code>POST /rag/retrieve</code> 须使用同一 <strong>dept / kb</strong>。
+    PDF 默认走 <strong>deepdoc（RAGFlowPdfParser）</strong>，失败自动回退 pypdf；可下拉选「仅 pypdf」对比。
+    解析器列表：<a href="/rag/ingest/options" target="_blank">/rag/ingest/options</a>。
+  </p>
+
+  <div class="card">
+    <h2>① 上传文件入库</h2>
+    <form id="ingest">
+      <label for="file">文件</label>
+      <input id="file" name="file" type="file" required />
+      <div class="row">
+        <div>
+          <label for="iparser">解析方式</label>
+          <select id="iparser" name="parser"></select>
+        </div>
+        <div>
+          <label for="idept">RAG_DEPT</label>
+          <input id="idept" name="dept_tag" type="text" value="test_rag" />
+        </div>
+        <div>
+          <label for="ikb">RAG_KB_ID</label>
+          <input id="ikb" name="kb_id" type="text" value="attention" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label for="imax" title="解析完成后，单段超过此字符数再切开；不是 deepdoc 内部 token 分块">后置分块上限（字符）</label>
+          <input id="imax" name="max_chunk_chars" type="number" min="200" max="32000" value="1500" />
+        </div>
+        <div class="checks" style="grid-column: span 2;">
+          <label><input type="checkbox" id="ireplace" checked /> 入库前删除同名 collection（推荐）</label>
+          <label><input type="checkbox" id="iexport" checked /> 写入 ingest manifest JSON</label>
+        </div>
+      </div>
+      <button type="submit" id="ibtn">开始入库（会调嵌入 API，请稍候）</button>
+    </form>
+    <div id="istatus" class="status"></div>
+    <pre id="iraw" style="margin-top:1rem">{}</pre>
+  </div>
+
+  <div class="card">
+    <h2>② 检索</h2>
+    <form id="f">
+      <label for="q">问题</label>
+      <textarea id="q" required placeholder="例如：What is scaled dot-product attention?">What is the Transformer and scaled dot-product attention?</textarea>
+      <div class="row">
+        <div>
+          <label for="topk">top_k</label>
+          <input id="topk" type="number" min="1" max="50" value="5" />
+        </div>
+        <div>
+          <label for="dept">RAG_DEPT（须与入库一致）</label>
+          <input id="dept" type="text" value="test_rag" />
+        </div>
+        <div>
+          <label for="kb">RAG_KB_ID</label>
+          <input id="kb" type="text" value="attention" />
+        </div>
+      </div>
+      <label><input type="checkbox" id="export" /> 检索结果写入 data/rag_exports</label>
+      <button type="submit" id="btn">检索</button>
+    </form>
+    <div id="status" class="status"></div>
+  </div>
+
+  <div class="card">
+    <h2>命中列表</h2>
+    <div id="hits"></div>
+    <h2 style="margin-top:1rem">检索 JSON</h2>
+    <pre id="raw">{}</pre>
+  </div>
+
+  <p class="note">
+    <a href="/docs" target="_blank">/docs</a> · <a href="/health">/health</a>
+  </p>
+
+  <script>
+    const base = "";
+
+    async function loadParsers() {
+      const sel = document.getElementById("iparser");
+      try {
+        const r = await fetch(base + "/rag/ingest/options");
+        const d = await r.json();
+        sel.innerHTML = (d.parsers || []).map(p =>
+          `<option value="${escapeAttr(p.value)}">${escapeHtml(p.label)}</option>`
+        ).join("");
+      } catch (e) {
+        sel.innerHTML = '<option value="auto">自动</option><option value="pdf">pdf</option><option value="txt">txt</option><option value="md">md</option><option value="docx">docx</option>';
+      }
+    }
+    loadParsers();
+
+    async function ping() {
+      try {
+        const r = await fetch(base + "/health");
+        const j = await r.json();
+        document.getElementById("status").textContent = "服务: " + (j.status || "ok");
+        document.getElementById("status").classList.add("ok");
+      } catch (e) {
+        document.getElementById("status").textContent = "无法连接 API";
+      }
+    }
+    ping();
+
+    document.getElementById("ingest").onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("ibtn");
+      const st = document.getElementById("istatus");
+      const raw = document.getElementById("iraw");
+      const f = document.getElementById("file").files[0];
+      if (!f) return;
+      btn.disabled = true;
+      st.textContent = "入库中（嵌入可能较慢）…";
+      st.classList.remove("ok", "warn");
+      const fd = new FormData();
+      fd.append("file", f);
+      fd.append("dept_tag", document.getElementById("idept").value.trim() || "default");
+      fd.append("kb_id", document.getElementById("ikb").value.trim() || "default");
+      fd.append("parser", document.getElementById("iparser").value);
+      fd.append("max_chunk_chars", document.getElementById("imax").value || "1500");
+      fd.append("replace_collection", document.getElementById("ireplace").checked ? "true" : "false");
+      fd.append("export_manifest", document.getElementById("iexport").checked ? "true" : "false");
+      try {
+        const r = await fetch(base + "/rag/ingest", { method: "POST", body: fd });
+        const data = await r.json().catch(() => ({}));
+        raw.textContent = JSON.stringify(data, null, 2);
+        if (!r.ok) {
+          st.textContent = "失败 HTTP " + r.status + " — " + (data.detail || JSON.stringify(data));
+          st.classList.add("warn");
+          return;
+        }
+        st.textContent = "入库完成 · chunks=" + data.chunk_count + " · collection=" + data.collection_name;
+        st.classList.add("ok");
+        document.getElementById("dept").value = document.getElementById("idept").value.trim();
+        document.getElementById("kb").value = document.getElementById("ikb").value.trim();
+      } catch (err) {
+        st.textContent = String(err);
+        raw.textContent = String(err);
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    document.getElementById("f").onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("btn");
+      const status = document.getElementById("status");
+      const hitsEl = document.getElementById("hits");
+      const rawEl = document.getElementById("raw");
+      btn.disabled = true;
+      status.textContent = "检索中…";
+      status.classList.remove("ok");
+
+      const dept = document.getElementById("dept").value.trim();
+      const kb = document.getElementById("kb").value.trim();
+      const body = {
+        query: document.getElementById("q").value.trim(),
+        top_k: parseInt(document.getElementById("topk").value, 10) || 5,
+        auto_export_retrieval: document.getElementById("export").checked,
+        ...(dept ? { dept_tag: dept } : {}),
+        ...(kb ? { kb_id: kb } : {}),
+      };
+
+      try {
+        const r = await fetch(base + "/rag/retrieve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json();
+        rawEl.textContent = JSON.stringify(data, null, 2);
+        if (!r.ok) {
+          status.textContent = "错误 HTTP " + r.status;
+          hitsEl.innerHTML = "";
+          return;
+        }
+        status.textContent = "完成 · 命中 " + (data.hits || []).length + " 条" + (data.export_path ? " · 已导出 " + data.export_path : "");
+        status.classList.add("ok");
+        hitsEl.innerHTML = (data.hits || []).map((h, i) =>
+          `<div class="hit"><div class="meta">#${i} id=${escapeHtml(h.id)} distance=${Number(h.distance).toFixed(4)}</div><div>${escapeHtml(h.document || "").slice(0, 2000)}</div></div>`
+        ).join("") || "<p class='note'>无命中</p>";
+      } catch (err) {
+        status.textContent = String(err);
+        rawEl.textContent = String(err);
+        hitsEl.innerHTML = "";
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+    }
+    function escapeAttr(s) {
+      return escapeHtml(s).replace(/"/g, "&quot;");
+    }
+  </script>
+</body>
+</html>
