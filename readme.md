@@ -17,7 +17,7 @@
 | **记忆存储** | `common/settings.py` + `common/doc_store/sqlite_message_store.py`：`messages.py` 使用的 SQLite 后端 |
 | **JSON 检查** | `rag/retrieval/json_export.py`：入库 manifest / 检索结果落盘 |
 | **可观测** | `rag/utils/verbose.py`：`RAG_VERBOSE=1` 时 RAG 全链路 `[rag.*]` 输出至 stderr |
-| **HTTP 演示** | `main.py`：`GET /`、`GET /health`、`POST /rag/ingest`（上传入库）、`POST /rag/retrieve` |
+| **HTTP 演示** | `main.py`：`GET /`、`GET /health`、`POST /rag/ingest`（同步上传）、`POST /rag/ingest/async` + `GET /rag/ingest/tasks/{task_id}`（异步入库轮询）、`POST /rag/retrieve`（仅检索）、`POST /rag/qa`（检索+LLM 回答） |
 | **端到端自测** | 根目录 `test.py` + **`TEST_RAG.md`**（PDF 文本抽取 → 嵌入 → Chroma → 检索） |
 
 ---
@@ -51,10 +51,13 @@ PYTHONPATH=. python test.py
 ```bash
 PYTHONPATH=. uvicorn main:app --host 0.0.0.0 --port 8000
 # 浏览器打开 http://127.0.0.1:8000/  — 上传入库 + 检索（web/static/index.html）
-# 健康检查: GET /health
+# 健康检查: GET /health（简版），GET /health/detail（含关键环境变量检查）
 # 入库: POST /rag/ingest  multipart: file, dept_tag, kb_id, parser(auto|pdf|pdf_deepdoc|pdf_pypdf|txt|md|docx), max_chunk_chars, ...
 # 解析器列表: GET /rag/ingest/options
 # 检索: POST /rag/retrieve  JSON: {"query":"...","top_k":5,"dept_tag":"test_rag","kb_id":"attention",...}
+# RAG+回答: POST /rag/qa  JSON: 同上 + 可选 "use_vision":true（需 RAG_PUBLIC_BASE_URL + LLM_VISION_MODEL）
+# 飞书/微信/App 对接说明: docs/integrations.md
+# 长文入库建议走异步: POST /rag/ingest/async -> 返回 task_id，再 GET /rag/ingest/tasks/{task_id} 轮询
 ```
 
 检索使用的 collection 由 **`RAG_DEPT`、`RAG_KB_ID`**（请求体可覆盖）决定，需与入库时一致（例如先 `test.py` 再在前端填相同 dept/kb）。
@@ -76,7 +79,31 @@ PYTHONPATH=. python -c "from deepdoc.parser.pdf_parser import RAGFlowPdfParser"
 
 第二行会打印**具体缺哪个包**；装齐后应无报错。
 
+**若报错 `cannot import name 'pip_install_torch' from 'common.misc_utils'`**（或其它 `common.*` 缺失）：说明 deepdoc 仍依赖 **RAGFlow 同名 `common` 模块**；本仓库在 `common/misc_utils.py` 中提供 **`pip_install_torch`**、**`thread_pool_exec`** 等与上游对齐的占位/实现，请拉取最新代码。`pip_install_torch` **不会**自动 `pip install torch`，需要 GPU 加速时请自行安装 `torch`。
+
 **若 import 成功但初始化失败**（模型下载、磁盘、`rag/res/deepdoc` 等）：选 **`pdf_pypdf`** 先入库，或检查网络/HF 镜像与 `rag/res/deepdoc` 是否可写。
+
+**若报错 `Failed to load model ... updown_concat_xgb.model` / `binary format ... removed in 3.1`**：deepdoc 自带的 xgb 权重仍是**旧二进制**，与 **XGBoost 3.1+** 不兼容。请 **`pip install "xgboost>=2,<3.1"`**（与 **`requirements.txt`** 中上限一致），或自行用 XGBoost 3.0 按官方文档把模型转为 UBJ/JSON 后替换文件。
+
+**`data/rag_exports` 里两种入库 JSON（与检索无关）**
+
+| 文件名模式 | ``kind`` | 时机 | 内容 |
+|------------|----------|------|------|
+| ``chunks_pre_embed_*`` | ``ingest_chunks_pre_embed`` | **调用嵌入 API 之前** | 仅解析+分块后的 ``id`` / ``document`` / ``metadata``，**无向量**；顶层含 ``extract_engine``（是否 deepdoc 看此字段） |
+| ``ingest_*`` | ``ingest_manifest`` | **已算完 embedding**、写入 Chroma 之前 | 同上 + 每条 ``embedding_dim``（可选 ``embedding_preview``） |
+
+**检索**另会生成 ``retrieve_*``（仅当你在前端勾选导出或 API 传 ``auto_export_retrieval``），与入库无关。
+
+#### PDF 内嵌图与 ``metadata.image_uri``
+
+- **deepdoc / pypdf 文本**：仍只产生正文；另用 **``pypdf`` 按物理页**抽取 PDF **内嵌位图**，保存到 ``web/static/images/<uuid>.png``（与 ``main.py`` 的 ``/static`` 挂载一致）。
+- 每个 chunk 的 ``metadata`` 中，若该 **``page``**（与 PDF 页码一致）上有图，则增加 **``image_uri``**：**JSON 字符串**，内容为路径数组，例如 ``["/static/images/abc.png"]``。**不写死域名**，由调用方用当前站点 origin 拼接（浏览器可直接 ``<img src="/static/...">`` 同源访问）。
+- 关闭抽图：环境变量 ``RAG_EXTRACT_PDF_IMAGES=false`` 或入库表单 ``extract_pdf_images=false``。
+- 检索接口每条 hit 额外带 **``image_uris``**（解析后的列表），便于前端展示。
+
+**入库进度**：默认在运行 uvicorn 的终端打印 ``[ingest] …``（解析 / 分块 / 嵌入 1/5… / Chroma）。关闭：``.env`` 设 ``RAG_INGEST_PROGRESS=0``。更细嵌入日志另设 ``RAG_VERBOSE=1``。
+
+**入库返回 HTTP 503**：`main.py` 将 ``run_ingest`` 中的 ``RuntimeError`` 映射为 503。终端会打印 ``run_ingest RuntimeError → HTTP 503``；浏览器/接口响应体里的 **`detail` 字段**即为具体原因。HF 出现 `Fetching … 100%` 只说明 **模型下载阶段通过**，后面 **DashScope 嵌入**（`EMBEDDING_API_KEY` / 额度）或 **Chroma 写入** 仍可能报错。
 
 #### `max_chunk_chars` 是什么？
 

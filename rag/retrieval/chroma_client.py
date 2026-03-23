@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,56 @@ def collection_name(*, dept: str, kb_id: str, kind: str = "default") -> str:
         return "".join(c if c.isalnum() or c in "-_" else "_" for c in s)[:48]
 
     return f"ragpulse__{safe(dept)}__{safe(kb_id)}__{safe(kind)}"
+
+
+def _chroma_add_batch_size() -> int:
+    """``RAG_CHROMA_ADD_BATCH_SIZE``：>0 时分批 ``collection.add``；0 或未设置则一次性写入。"""
+    try:
+        n = int(os.getenv("RAG_CHROMA_ADD_BATCH_SIZE", "0").strip() or "0")
+    except ValueError:
+        n = 0
+    return max(0, n)
+
+
+def _chroma_add_retry_config() -> tuple[int, float]:
+    try:
+        retries = int(os.getenv("RAG_CHROMA_ADD_MAX_RETRIES", "3").strip() or "3")
+    except ValueError:
+        retries = 3
+    retries = max(1, min(retries, 10))
+    try:
+        base = float(os.getenv("RAG_CHROMA_ADD_RETRY_SLEEP", "1.0").strip() or "1.0")
+    except ValueError:
+        base = 1.0
+    return retries, max(0.1, base)
+
+
+def _save_failed_chroma_batch(
+    *,
+    collection_name: str,
+    batch_index: int,
+    error: str,
+    ids: list[str],
+    documents: list[str],
+    metadatas: list[dict[str, Any]],
+) -> Path:
+    """某批 ``col.add`` 彻底失败时落盘，便于补写（不含 embedding，需重新 embed 或从 manifest 找回）。"""
+    from rag.retrieval.json_export import default_export_dir, save_json, utc_slug
+
+    name_safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in collection_name)[:64]
+    path = default_export_dir() / f"failed_chroma_batch_{name_safe}_{batch_index}_{utc_slug()}.json"
+    payload = {
+        "collection_name": collection_name,
+        "batch_index": batch_index,
+        "error": error,
+        "count": len(ids),
+        "ids": ids,
+        "documents": documents,
+        "metadatas": metadatas,
+        "hint": "未写入向量；可修复后对该批重新 embed 再 col.add，或从同次 ingest 的 manifest 取 embeddings",
+    }
+    save_json(payload, path)
+    return path
 
 
 class ChromaRagStore:
@@ -78,8 +129,102 @@ class ChromaRagStore:
                 include_embedding_preview=export_embedding_preview,
             )
         col = self.get_collection(collection_name)
-        col.add(ids=ids, embeddings=embeddings, documents=documents, metadatas=metadatas)
-        rag_print(f"add done collection={collection_name!r}", tag="rag.chroma")
+        bs = _chroma_add_batch_size()
+        n = len(ids)
+        retries, base_sleep = _chroma_add_retry_config()
+
+        if bs <= 0 or n <= bs:
+            self._add_with_retry(
+                col,
+                collection_name=collection_name,
+                ids=ids,
+                embeddings=embeddings,
+                documents=documents,
+                metadatas=metadatas,
+                batch_index=0,
+                retries=retries,
+                base_sleep=base_sleep,
+            )
+        else:
+            total = (n + bs - 1) // bs
+            for b in range(total):
+                lo, hi = b * bs, min((b + 1) * bs, n)
+                rag_print(
+                    f"add batch {b + 1}/{total} rows [{lo}:{hi}) collection={collection_name!r}",
+                    tag="rag.chroma",
+                )
+                self._add_with_retry(
+                    col,
+                    collection_name=collection_name,
+                    ids=ids[lo:hi],
+                    embeddings=embeddings[lo:hi],
+                    documents=documents[lo:hi],
+                    metadatas=metadatas[lo:hi],
+                    batch_index=b,
+                    retries=retries,
+                    base_sleep=base_sleep,
+                )
+                # 与旧 LangChain 脚本里 sleep 类似，减轻本地 Chroma 连续写入压力（可选）
+                pause = float(os.getenv("RAG_CHROMA_ADD_BATCH_PAUSE_SEC", "0") or "0")
+                if pause > 0 and b < total - 1:
+                    time.sleep(pause)
+
+        rag_print(f"add done collection={collection_name!r} total_rows={n}", tag="rag.chroma")
+
+    def _add_with_retry(
+        self,
+        col,
+        *,
+        collection_name: str,
+        ids: list[str],
+        embeddings: list[list[float]],
+        documents: list[str],
+        metadatas: list[dict[str, Any]],
+        batch_index: int,
+        retries: int,
+        base_sleep: float,
+    ) -> None:
+        last_err: Exception | None = None
+        for attempt in range(retries):
+            try:
+                col.add(
+                    ids=ids,
+                    embeddings=embeddings,
+                    documents=documents,
+                    metadatas=metadatas,
+                )
+                return
+            except Exception as e:
+                last_err = e
+                wait = base_sleep * (2**attempt)
+                _log.warning(
+                    "chroma add failed batch=%s attempt=%s/%s: %s; sleep %.1fs",
+                    batch_index,
+                    attempt + 1,
+                    retries,
+                    e,
+                    wait,
+                )
+                rag_print(
+                    f"chroma add retry batch={batch_index} {attempt + 1}/{retries} err={e!r} sleep={wait:.1f}s",
+                    tag="rag.chroma",
+                )
+                if attempt < retries - 1:
+                    time.sleep(wait)
+
+        assert last_err is not None
+        fail_path = _save_failed_chroma_batch(
+            collection_name=collection_name,
+            batch_index=batch_index,
+            error=repr(last_err),
+            ids=ids,
+            documents=documents,
+            metadatas=metadatas,
+        )
+        _log.error("chroma add gave up batch=%s saved=%s", batch_index, fail_path)
+        raise RuntimeError(
+            f"Chroma 写入失败（batch={batch_index}），已落盘: {fail_path}。原因: {last_err}"
+        ) from last_err
 
     def query(
         self,

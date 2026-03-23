@@ -31,14 +31,15 @@
     input[type="file"] { padding: 0.4rem; }
     .checks label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; margin-top: 0.5rem; }
     .checks input { width: auto; }
+    .answer-box { background: #0d1117; border: 1px solid #238636; border-radius: 8px; padding: 1rem; margin-top: 0.75rem; font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; }
+    .answer-box .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; }
   </style>
 </head>
 <body>
   <h1>ragpulse — 入库与检索</h1>
   <p class="note">
-    入库：<code>POST /rag/ingest</code> 与检索 <code>POST /rag/retrieve</code> 须使用同一 <strong>dept / kb</strong>。
-    PDF 默认走 <strong>deepdoc（RAGFlowPdfParser）</strong>，失败自动回退 pypdf；可下拉选「仅 pypdf」对比。
-    解析器列表：<a href="/rag/ingest/options" target="_blank">/rag/ingest/options</a>。
+    入库 <code>POST /rag/ingest</code>、检索 <code>POST /rag/retrieve</code>、<strong>整条 RAG+回答</strong> <code>POST /rag/qa</code> 须使用同一 <strong>dept / kb</strong>。
+    PDF 默认 deepdoc；多模态 LLM 需配置 <code>RAG_PUBLIC_BASE_URL</code> + <code>LLM_VISION_MODEL</code>，见 <a href="/docs" target="_blank">/docs</a> 与仓库 <code>docs/integrations.md</code>。
   </p>
 
   <div class="card">
@@ -67,9 +68,16 @@
         </div>
         <div class="checks" style="grid-column: span 2;">
           <label><input type="checkbox" id="ireplace" checked /> 入库前删除同名 collection（推荐）</label>
-          <label><input type="checkbox" id="iexport" checked /> 写入 ingest manifest JSON</label>
+          <label><input type="checkbox" id="iasync" checked /> 异步入库（推荐，返回 task_id 后轮询进度，不会长时间卡住页面）</label>
+          <label><input type="checkbox" id="iprechunk" checked title="调用嵌入 API 之前落盘，无向量" /> 导出「分块预览」JSON（嵌入前，纯文本+元数据）</label>
+          <label><input type="checkbox" id="iexport" checked title="已算完向量、写入 Chroma 之前；含 embedding_dim" /> 写入 ingest manifest（含向量维度）</label>
+          <label><input type="checkbox" id="ipdfimg" checked title="PDF 内嵌图 → web/static/images，metadata.image_uri 为相对路径 JSON 列表" /> PDF 提取内嵌图并写入 metadata</label>
         </div>
       </div>
+      <p class="note" style="margin-top:0.75rem">
+        <strong>长文 PDF 说明：</strong>选「仅 deepdoc」时，几十页论文可能需 <strong>10～30 分钟+</strong>（版面/OCR + 每块文本单独调嵌入 API）。
+        终端在请求<strong>结束</strong>前往往<strong>不会出现</strong> <code>POST /rag/ingest</code> 日志，属正常现象。可先试「PDF（deepdoc 失败再 pypdf）」或「仅 pypdf」验证链路。
+      </p>
       <button type="submit" id="ibtn">开始入库（会调嵌入 API，请稍候）</button>
     </form>
     <div id="istatus" class="status"></div>
@@ -77,7 +85,7 @@
   </div>
 
   <div class="card">
-    <h2>② 检索</h2>
+    <h2>② 仅检索（无 LLM）</h2>
     <form id="f">
       <label for="q">问题</label>
       <textarea id="q" required placeholder="例如：What is scaled dot-product attention?">What is the Transformer and scaled dot-product attention?</textarea>
@@ -95,14 +103,36 @@
           <input id="kb" type="text" value="attention" />
         </div>
       </div>
-      <label><input type="checkbox" id="export" /> 检索结果写入 data/rag_exports</label>
+      <label><input type="checkbox" id="export" /> 检索结果写入 data/rag_exports（与入库 JSON 无关；不勾则只返回 JSON 不落盘）</label>
       <button type="submit" id="btn">检索</button>
     </form>
     <div id="status" class="status"></div>
   </div>
 
   <div class="card">
-    <h2>命中列表</h2>
+    <h2>③ RAG 问答（检索 + LLM 回答）</h2>
+    <p class="note">与 ② 共用下方「命中列表」展示；此处生成 <code>answer</code>。勾选「多模态」时会把命中图片的<strong>公网 URL</strong>发给视觉模型（需服务器配置 <code>RAG_PUBLIC_BASE_URL</code>）。</p>
+    <form id="qa">
+      <label for="qq">问题（可与 ② 相同）</label>
+      <textarea id="qq" required placeholder="例如：文档里这张图说明什么？"></textarea>
+      <div class="row">
+        <div>
+          <label for="qtopk">top_k</label>
+          <input id="qtopk" type="number" min="1" max="50" value="5" />
+        </div>
+        <div class="checks" style="align-self: end;">
+          <label><input type="checkbox" id="qvision" /> 多模态（use_vision，需公网 BASE_URL）</label>
+        </div>
+        <div></div>
+      </div>
+      <button type="submit" id="qbtn">生成回答</button>
+    </form>
+    <div id="qstatus" class="status"></div>
+    <div id="qanswer" class="answer-box" style="display:none;"></div>
+  </div>
+
+  <div class="card">
+    <h2>命中列表（② 或 ③ 最后一次结果）</h2>
     <div id="hits"></div>
     <h2 style="margin-top:1rem">检索 JSON</h2>
     <pre id="raw">{}</pre>
@@ -149,8 +179,12 @@
       const f = document.getElementById("file").files[0];
       if (!f) return;
       btn.disabled = true;
-      st.textContent = "入库中（嵌入可能较慢）…";
       st.classList.remove("ok", "warn");
+      const t0 = Date.now();
+      st.textContent = "入库中… 已等待 0s（长 PDF + deepdoc 可能需数分钟～数十分钟，请勿关页）";
+      const tick = setInterval(() => {
+        st.textContent = "入库中… 已等待 " + Math.floor((Date.now() - t0) / 1000) + "s（deepdoc+逐条嵌入，请耐心等待）";
+      }, 2000);
       const fd = new FormData();
       fd.append("file", f);
       fd.append("dept_tag", document.getElementById("idept").value.trim() || "default");
@@ -159,22 +193,126 @@
       fd.append("max_chunk_chars", document.getElementById("imax").value || "1500");
       fd.append("replace_collection", document.getElementById("ireplace").checked ? "true" : "false");
       fd.append("export_manifest", document.getElementById("iexport").checked ? "true" : "false");
+      fd.append("export_chunks_pre_embed", document.getElementById("iprechunk").checked ? "true" : "false");
+      fd.append("extract_pdf_images", document.getElementById("ipdfimg").checked ? "true" : "false");
       try {
-        const r = await fetch(base + "/rag/ingest", { method: "POST", body: fd });
-        const data = await r.json().catch(() => ({}));
-        raw.textContent = JSON.stringify(data, null, 2);
-        if (!r.ok) {
-          st.textContent = "失败 HTTP " + r.status + " — " + (data.detail || JSON.stringify(data));
+        const useAsync = document.getElementById("iasync").checked;
+        if (!useAsync) {
+          const r = await fetch(base + "/rag/ingest", { method: "POST", body: fd });
+          const data = await r.json().catch(() => ({}));
+          raw.textContent = JSON.stringify(data, null, 2);
+          if (!r.ok) {
+            st.textContent = "失败 HTTP " + r.status + " — " + (data.detail || JSON.stringify(data));
+            st.classList.add("warn");
+            return;
+          }
+          st.textContent = "入库完成 · chunks=" + data.chunk_count + " · collection=" + data.collection_name
+            + (data.ingest_chunks_pre_embed_path ? " · 嵌入前=" + data.ingest_chunks_pre_embed_path : "")
+            + (data.ingest_export_path ? " · manifest=" + data.ingest_export_path : "");
+          st.classList.add("ok");
+          document.getElementById("dept").value = document.getElementById("idept").value.trim();
+          document.getElementById("kb").value = document.getElementById("ikb").value.trim();
+          return;
+        }
+
+        const r0 = await fetch(base + "/rag/ingest/async", { method: "POST", body: fd });
+        const j0 = await r0.json().catch(() => ({}));
+        if (!r0.ok || !j0.task_id) {
+          raw.textContent = JSON.stringify(j0, null, 2);
+          st.textContent = "提交失败 HTTP " + r0.status + " — " + (j0.detail || JSON.stringify(j0));
           st.classList.add("warn");
           return;
         }
-        st.textContent = "入库完成 · chunks=" + data.chunk_count + " · collection=" + data.collection_name;
-        st.classList.add("ok");
-        document.getElementById("dept").value = document.getElementById("idept").value.trim();
-        document.getElementById("kb").value = document.getElementById("ikb").value.trim();
+        const taskId = j0.task_id;
+        st.textContent = "任务已提交 task_id=" + taskId + "，开始轮询…";
+        raw.textContent = JSON.stringify(j0, null, 2);
+
+        while (true) {
+          await new Promise(res => setTimeout(res, 2000));
+          const rt = await fetch(base + "/rag/ingest/tasks/" + encodeURIComponent(taskId));
+          const jt = await rt.json().catch(() => ({}));
+          raw.textContent = JSON.stringify(jt, null, 2);
+          if (!rt.ok) {
+            st.textContent = "任务查询失败 HTTP " + rt.status + " — " + (jt.detail || "");
+            st.classList.add("warn");
+            break;
+          }
+          const elapsed = Number(jt.elapsed_sec || 0).toFixed(1);
+          st.textContent = "任务 " + jt.status + " · " + elapsed + "s"
+            + (jt.message ? " · " + jt.message : "");
+          if (jt.status === "succeeded") {
+            const data = jt.result || {};
+            st.textContent = "入库完成 · chunks=" + data.chunk_count + " · collection=" + data.collection_name
+              + (data.ingest_chunks_pre_embed_path ? " · 嵌入前=" + data.ingest_chunks_pre_embed_path : "")
+              + (data.ingest_export_path ? " · manifest=" + data.ingest_export_path : "");
+            st.classList.add("ok");
+            document.getElementById("dept").value = document.getElementById("idept").value.trim();
+            document.getElementById("kb").value = document.getElementById("ikb").value.trim();
+            break;
+          }
+          if (jt.status === "failed") {
+            st.textContent = "任务失败: " + (jt.error_type || "Error") + " — " + (jt.error || "");
+            st.classList.add("warn");
+            break;
+          }
+        }
       } catch (err) {
         st.textContent = String(err);
         raw.textContent = String(err);
+      } finally {
+        clearInterval(tick);
+        btn.disabled = false;
+      }
+    };
+
+    document.getElementById("qa").onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById("qbtn");
+      const status = document.getElementById("qstatus");
+      const ans = document.getElementById("qanswer");
+      const hitsEl = document.getElementById("hits");
+      const rawEl = document.getElementById("raw");
+      btn.disabled = true;
+      status.textContent = "检索 + LLM 生成中…";
+      status.classList.remove("ok", "warn");
+      ans.style.display = "none";
+      const dept = document.getElementById("dept").value.trim();
+      const kb = document.getElementById("kb").value.trim();
+      const body = {
+        query: document.getElementById("qq").value.trim(),
+        top_k: parseInt(document.getElementById("qtopk").value, 10) || 5,
+        use_vision: document.getElementById("qvision").checked,
+        vision_max_images: 4,
+        ...(dept ? { dept_tag: dept } : {}),
+        ...(kb ? { kb_id: kb } : {}),
+      };
+      try {
+        const r = await fetch(base + "/rag/qa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const data = await r.json();
+        rawEl.textContent = JSON.stringify(data, null, 2);
+        if (!r.ok) {
+          status.textContent = "错误 HTTP " + r.status + " — " + (data.detail || "");
+          status.classList.add("warn");
+          return;
+        }
+        status.textContent = "完成 · used_vision=" + data.used_vision + (data.vision_note ? " · " + data.vision_note : "");
+        status.classList.add("ok");
+        ans.style.display = "block";
+        ans.innerHTML = "<strong>LLM 回答</strong><br/>" + escapeHtml(data.answer || "(空)")
+          + "<div class='sub'>vision_note: " + escapeHtml(data.vision_note || "—") + "</div>";
+        hitsEl.innerHTML = (data.hits || []).map((h, i) => {
+          const imgs = (h.image_uris && h.image_uris.length) ? h.image_uris.map(u =>
+            `<img src="${escapeAttr(u)}" alt="" style="max-width:100%;max-height:220px;border-radius:6px;margin:0.35rem 0;display:block;" loading="lazy" />`
+          ).join("") : "";
+          return `<div class="hit"><div class="meta">#${i} id=${escapeHtml(h.id)} distance=${Number(h.distance).toFixed(4)}</div>${imgs}<div>${escapeHtml(h.document || "").slice(0, 2000)}</div></div>`;
+        }).join("") || "<p class='note'>无命中</p>";
+      } catch (err) {
+        status.textContent = String(err);
+        rawEl.textContent = String(err);
       } finally {
         btn.disabled = false;
       }
@@ -215,9 +353,12 @@
         }
         status.textContent = "完成 · 命中 " + (data.hits || []).length + " 条" + (data.export_path ? " · 已导出 " + data.export_path : "");
         status.classList.add("ok");
-        hitsEl.innerHTML = (data.hits || []).map((h, i) =>
-          `<div class="hit"><div class="meta">#${i} id=${escapeHtml(h.id)} distance=${Number(h.distance).toFixed(4)}</div><div>${escapeHtml(h.document || "").slice(0, 2000)}</div></div>`
-        ).join("") || "<p class='note'>无命中</p>";
+        hitsEl.innerHTML = (data.hits || []).map((h, i) => {
+          const imgs = (h.image_uris && h.image_uris.length) ? h.image_uris.map(u =>
+            `<img src="${escapeAttr(u)}" alt="" style="max-width:100%;max-height:220px;border-radius:6px;margin:0.35rem 0;display:block;" loading="lazy" />`
+          ).join("") : "";
+          return `<div class="hit"><div class="meta">#${i} id=${escapeHtml(h.id)} distance=${Number(h.distance).toFixed(4)}</div>${imgs}<div>${escapeHtml(h.document || "").slice(0, 2000)}</div></div>`;
+        }).join("") || "<p class='note'>无命中</p>";
       } catch (err) {
         status.textContent = String(err);
         rawEl.textContent = String(err);

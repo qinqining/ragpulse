@@ -64,6 +64,10 @@ rag/res/deepdoc/
 .DS_Store
 Thumbs.db
 
+# 入库从 PDF 抽出的图片（仅保留目录占位提交）
+web/static/images/*
+!web/static/images/.gitkeep
+
 # 临时上传 / 调试
 *.tmp
 *.temp

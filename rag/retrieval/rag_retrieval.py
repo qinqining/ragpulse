@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from rag.embedding.qwen_embed import QwenTextEmbedding
+from rag.ingest.pdf_embedded_images import image_uri_list_from_metadata
 from rag.retrieval.chroma_client import ChromaRagStore, collection_name
 from rag.utils.verbose import rag_print
 
@@ -40,11 +41,13 @@ def retrieve_for_query(
     for i, cid in enumerate(ids):
         if not cid:
             continue
+        meta = metas[i] if i < len(metas) else {}
         hits.append(
             {
                 "id": cid,
                 "document": docs[i] if i < len(docs) else "",
-                "metadata": metas[i] if i < len(metas) else {},
+                "metadata": meta,
+                "image_uris": image_uri_list_from_metadata(meta if isinstance(meta, dict) else {}),
                 "distance": float(dists[i]) if i < len(dists) else 1.0,
             }
         )

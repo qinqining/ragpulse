@@ -19,7 +19,8 @@ python-docx>=1.1.0
 
 # deepdoc PDF（RAGFlowPdfParser）入库建议一并安装（缺一都会在 import 阶段失败）：
 pdfplumber>=0.11.0
-xgboost>=2.0.0
+# HF 上 updown_concat_xgb.model 为旧二进制格式；XGBoost 3.1+ 已移除支持，会报 load_model deprecated
+xgboost>=2.0.0,<3.1
 scikit-learn>=1.3.0
 onnxruntime>=1.16.0
 huggingface-hub>=0.20.0

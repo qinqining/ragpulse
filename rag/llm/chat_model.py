@@ -1,4 +1,8 @@
-"""OpenAI 兼容 Chat Completions（百炼 compatible-mode）。"""
+"""
+OpenAI 兼容 Chat Completions（百炼 compatible-mode）。
+
+仅负责 ``messages`` → HTTP → 回复文本；**业务提示词**在 ``rag/prompts/generator.py`` 等处组装后再传入。
+"""
 
 from __future__ import annotations
 

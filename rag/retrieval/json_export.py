@@ -108,6 +108,58 @@ def suggest_ingest_export_path(collection_name: str) -> Path:
     return default_export_dir() / f"ingest_{safe}_{utc_slug()}.json"
 
 
+def export_ingest_chunks_pre_embed(
+    *,
+    collection_name: str,
+    ids: list[str],
+    documents: list[str],
+    metadatas: list[dict[str, Any]],
+    original_filename: str,
+    parser_used: str,
+    extract_engine: str,
+    extract_detail: str,
+    extract_warnings: list[str],
+    max_chunk_chars: int,
+    export_path: str | Path,
+) -> Path:
+    """
+    **嵌入 API 调用之前** 导出：仅解析 + ``chunk_pages`` 后的文本块与元数据，**不含向量**。
+
+    与 ``export_ingest_manifest``（在拿到 embedding 之后、写入 Chroma 之前写出，带 ``embedding_dim``）用途不同。
+    """
+    chunks: list[dict[str, Any]] = []
+    for i, cid in enumerate(ids):
+        chunks.append(
+            {
+                "id": cid,
+                "document": documents[i] if i < len(documents) else "",
+                "metadata": metadatas[i] if i < len(metadatas) else {},
+            }
+        )
+    payload = {
+        "exported_at": datetime.now(timezone.utc).isoformat(),
+        "kind": "ingest_chunks_pre_embed",
+        "collection_name": collection_name,
+        "original_filename": original_filename,
+        "parser_used": parser_used,
+        "extract_engine": extract_engine,
+        "extract_detail": extract_detail,
+        "extract_warnings": extract_warnings,
+        "max_chunk_chars": max_chunk_chars,
+        "chunk_count": len(chunks),
+        "chunks": chunks,
+        "note": "无 embedding；若需检查入库前向量，请用 kind=ingest_manifest 的 JSON（embedding_dim / 可选 preview）",
+    }
+    rag_print(f"export_ingest_chunks_pre_embed chunks={len(chunks)} -> {export_path}", tag="rag.export")
+    return save_json(payload, export_path)
+
+
+def suggest_pre_embed_export_path(collection_name: str) -> Path:
+    """默认文件名：``chunks_pre_embed_{collection}_{utc}.json``。"""
+    safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in collection_name)[:80]
+    return default_export_dir() / f"chunks_pre_embed_{safe}_{utc_slug()}.json"
+
+
 def suggest_retrieval_export_path(query: str) -> Path:
     """默认文件名：``data/rag_exports/retrieve_{slug}_{utc}.json``。"""
     q = "".join(c if c.isalnum() or c in "-_" else "_" for c in query.strip()[:40])
