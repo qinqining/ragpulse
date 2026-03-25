@@ -52,7 +52,7 @@ PYTHONPATH=. python test.py
 PYTHONPATH=. uvicorn main:app --host 0.0.0.0 --port 8000
 # 浏览器打开 http://127.0.0.1:8000/  — 上传入库 + 检索（web/static/index.html）
 # 健康检查: GET /health（简版），GET /health/detail（含关键环境变量检查）
-# 入库: POST /rag/ingest  multipart: file, dept_tag, kb_id, parser(auto|pdf|pdf_deepdoc|pdf_pypdf|txt|md|docx), max_chunk_chars, ...
+# 入库: POST /rag/ingest  multipart: file, dept_tag, kb_id, parser(auto|pdf|pdf_deepdoc|pdf_pypdf|txt|md|docx), pdf_doc_type, ...
 # 解析器列表: GET /rag/ingest/options
 # 检索: POST /rag/retrieve  JSON: {"query":"...","top_k":5,"dept_tag":"test_rag","kb_id":"attention",...}
 # RAG+回答: POST /rag/qa  JSON: 同上 + 可选 "use_vision":true（需 RAG_PUBLIC_BASE_URL + LLM_VISION_MODEL）
@@ -101,14 +101,9 @@ PYTHONPATH=. python -c "from deepdoc.parser.pdf_parser import RAGFlowPdfParser"
 - 关闭抽图：环境变量 ``RAG_EXTRACT_PDF_IMAGES=false`` 或入库表单 ``extract_pdf_images=false``。
 - 检索接口每条 hit 额外带 **``image_uris``**（解析后的列表），便于前端展示。
 
-**入库进度**：默认在运行 uvicorn 的终端打印 ``[ingest] …``（解析 / 分块 / 嵌入 1/5… / Chroma）。关闭：``.env`` 设 ``RAG_INGEST_PROGRESS=0``。更细嵌入日志另设 ``RAG_VERBOSE=1``。
+**入库进度**：默认在运行 uvicorn 的终端打印 ``[ingest] …``（解析 / 嵌入 / Chroma）。关闭：``.env`` 设 ``RAG_INGEST_PROGRESS=0``。更细嵌入日志另设 ``RAG_VERBOSE=1``。
 
 **入库返回 HTTP 503**：`main.py` 将 ``run_ingest`` 中的 ``RuntimeError`` 映射为 503。终端会打印 ``run_ingest RuntimeError → HTTP 503``；浏览器/接口响应体里的 **`detail` 字段**即为具体原因。HF 出现 `Fetching … 100%` 只说明 **模型下载阶段通过**，后面 **DashScope 嵌入**（`EMBEDDING_API_KEY` / 额度）或 **Chroma 写入** 仍可能报错。
-
-#### `max_chunk_chars` 是什么？
-
-- **不是** deepdoc 内部的 token / `naive_merge` 策略。  
-- **是**解析得到「段/页」之后，在 **`rag/ingest/chunking.py`** 里做的 **字符长度上限**：单条仍超过则再切开，避免单段过长无法嵌入或质量差。
 
 ### 4. 仅检索 CLI
 
@@ -138,7 +133,7 @@ ragpulse/
 │   └── doc_store/          # DocStoreConnection 占位、sqlite_message_store
 │
 ├── rag/                    # RAG 核心（与文件格式解耦：只处理「文本块 + 向量」）
-│   ├── ingest/             # 上传入库：parsers + chunking + run_ingest
+│   ├── ingest/             # 上传入库：parsers + run_ingest（不做二次切分）
 │   │   ├── parsers.py      # auto/pdf/txt/md/docx
 │   │   ├── chunking.py
 │   │   └── service.py

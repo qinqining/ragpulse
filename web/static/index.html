@@ -62,11 +62,20 @@
         </div>
       </div>
       <div class="row">
+        <div></div>
         <div>
-          <label for="imax" title="解析完成后，单段超过此字符数再切开；不是 deepdoc 内部 token 分块">后置分块上限（字符）</label>
-          <input id="imax" name="max_chunk_chars" type="number" min="200" max="32000" value="1500" />
+          <label for="idocType" title="仅 PDF 生效；默认自动识别 paper/book/laws/one">PDF 内容类型</label>
+          <select id="idocType" name="pdf_doc_type">
+            <option value="auto" selected>自动识别（推荐）</option>
+            <option value="paper">学术论文（paper）</option>
+            <option value="laws">法规 / 问答（laws）</option>
+            <option value="book">书籍 / 章节型（book）</option>
+            <option value="one">通用文档（one）</option>
+          </select>
         </div>
-        <div class="checks" style="grid-column: span 2;">
+      </div>
+      <div class="row">
+        <div class="checks" style="grid-column: span 3;">
           <label><input type="checkbox" id="ireplace" checked /> 入库前删除同名 collection（推荐）</label>
           <label><input type="checkbox" id="iasync" checked /> 异步入库（推荐，返回 task_id 后轮询进度，不会长时间卡住页面）</label>
           <label><input type="checkbox" id="iprechunk" checked title="调用嵌入 API 之前落盘，无向量" /> 导出「分块预览」JSON（嵌入前，纯文本+元数据）</label>
@@ -101,6 +110,14 @@
         <div>
           <label for="kb">RAG_KB_ID</label>
           <input id="kb" type="text" value="attention" />
+        </div>
+      </div>
+      <div class="row">
+        <div style="grid-column: span 3;">
+          <label for="kbsel">已入库知识库（自动填充 dept / kb）</label>
+          <select id="kbsel">
+            <option value="">（从当前输入使用）</option>
+          </select>
         </div>
       </div>
       <label><input type="checkbox" id="export" /> 检索结果写入 data/rag_exports（与入库 JSON 无关；不勾则只返回 JSON 不落盘）</label>
@@ -171,6 +188,47 @@
     }
     ping();
 
+    async function loadKbList() {
+      const sel = document.getElementById("kbsel");
+      if (!sel) return;
+      const deptInput = document.getElementById("dept");
+      const kbInput = document.getElementById("kb");
+      const ideptInput = document.getElementById("idept");
+      const ikbInput = document.getElementById("ikb");
+
+      try {
+        const r = await fetch(base + "/rag/kbs");
+        const d = await r.json();
+        const cols = d.collections || [];
+        sel.innerHTML = '<option value="">（从当前输入使用）</option>' + cols.map(c =>
+          `<option value="${escapeAttr(c.collection_name)}" data-dept="${escapeAttr(c.dept_tag)}" data-kb="${escapeAttr(c.kb_id)}">${escapeHtml(c.dept_tag)} / ${escapeHtml(c.kb_id)}</option>`
+        ).join("");
+
+        const curDept = (deptInput.value || "").trim();
+        const curKb = (kbInput.value || "").trim();
+        for (let i = 0; i < sel.options.length; i++) {
+          const opt = sel.options[i];
+          if (opt.dataset && opt.dataset.dept === curDept && opt.dataset.kb === curKb) {
+            sel.selectedIndex = i;
+            break;
+          }
+        }
+
+        sel.onchange = () => {
+          const opt = sel.options[sel.selectedIndex];
+          const dept = opt.dataset.dept || "";
+          const kb = opt.dataset.kb || "";
+          if (deptInput) deptInput.value = dept;
+          if (kbInput) kbInput.value = kb;
+          if (ideptInput) ideptInput.value = dept;
+          if (ikbInput) ikbInput.value = kb;
+        };
+      } catch (e) {
+        // 后端异常时保持当前输入
+      }
+    }
+    loadKbList();
+
     document.getElementById("ingest").onsubmit = async (e) => {
       e.preventDefault();
       const btn = document.getElementById("ibtn");
@@ -190,11 +248,12 @@
       fd.append("dept_tag", document.getElementById("idept").value.trim() || "default");
       fd.append("kb_id", document.getElementById("ikb").value.trim() || "default");
       fd.append("parser", document.getElementById("iparser").value);
-      fd.append("max_chunk_chars", document.getElementById("imax").value || "1500");
+      fd.append("pdf_doc_type", document.getElementById("idocType").value || "auto");
       fd.append("replace_collection", document.getElementById("ireplace").checked ? "true" : "false");
       fd.append("export_manifest", document.getElementById("iexport").checked ? "true" : "false");
       fd.append("export_chunks_pre_embed", document.getElementById("iprechunk").checked ? "true" : "false");
       fd.append("extract_pdf_images", document.getElementById("ipdfimg").checked ? "true" : "false");
+      fd.append("llm_chunk_summary", "false");
       try {
         const useAsync = document.getElementById("iasync").checked;
         if (!useAsync) {

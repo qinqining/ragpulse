@@ -113,11 +113,12 @@ def _run_ingest_sync(
     dept_tag: str,
     kb_id: str,
     parser: str,
-    max_chunk_chars: int,
+    pdf_doc_type: str,
     replace_collection: bool,
     export_manifest: bool,
     export_chunks_pre_embed: bool,
     extract_pdf_images: bool,
+    llm_chunk_summary: bool,
 ) -> dict[str, Any]:
     from rag.ingest.service import run_ingest
 
@@ -127,11 +128,12 @@ def _run_ingest_sync(
         dept_tag=dept_tag,
         kb_id=kb_id,
         parser=parser,
-        max_chunk_chars=max_chunk_chars,
+        pdf_doc_type=pdf_doc_type,
         replace_collection=replace_collection,
         export_manifest=export_manifest,
         export_chunks_pre_embed=export_chunks_pre_embed,
         extract_pdf_images=extract_pdf_images,
+        llm_chunk_summary=llm_chunk_summary,
     )
 
 
@@ -200,25 +202,47 @@ def rag_ingest_options() -> dict[str, Any]:
     return {"parsers": PARSER_CHOICES}
 
 
+@app.get("/rag/kbs")
+def rag_kbs() -> dict[str, Any]:
+    """
+    列出 Chroma 中已存在的知识库（collection）。
+
+    返回结构：
+    - `collections`: [{dept_tag, kb_id, kind, collection_name}, ...]
+    """
+    from rag.retrieval.chroma_client import ChromaRagStore, parse_collection_name
+
+    store = ChromaRagStore()
+    cols = []
+    for c in store._client.list_collections():
+        parsed = parse_collection_name(c.name)
+        if not parsed:
+            continue
+        cols.append(parsed)
+
+    # 稳定排序：dept -> kb -> kind
+    cols.sort(key=lambda x: (x.get("dept_tag", ""), x.get("kb_id", ""), x.get("kind", "")))
+    return {"collections": cols}
+
+
 @app.post("/rag/ingest")
 def rag_ingest(
     file: UploadFile = File(...),
     dept_tag: str = Form("default"),
     kb_id: str = Form("default"),
     parser: str = Form("auto"),
-    max_chunk_chars: int = Form(1500),
+    pdf_doc_type: str = Form("auto"),
     replace_collection: str = Form("true"),
     export_manifest: str = Form("true"),
     export_chunks_pre_embed: str = Form("true"),
     extract_pdf_images: str = Form("true"),
+    llm_chunk_summary: str = Form("false"),
 ) -> dict[str, Any]:
     """
     上传文件 → 按 parser 解析 → 分块 → 嵌入 → 写入 Chroma。
     ``replace_collection=true`` 会先删除同名 collection 再写入（与 test.py 一致）。
     """
     name = (file.filename or "upload").strip() or "upload"
-    if max_chunk_chars < 200 or max_chunk_chars > 32000:
-        raise HTTPException(400, "max_chunk_chars 建议 200~32000")
     tmp_path, name = _save_upload_to_temp(file)
 
     try:
@@ -230,11 +254,12 @@ def rag_ingest(
             dept_tag=dept,
             kb_id=kb,
             parser=parser,
-            max_chunk_chars=max_chunk_chars,
+            pdf_doc_type=pdf_doc_type,
             replace_collection=_form_bool(replace_collection),
             export_manifest=_form_bool(export_manifest),
             export_chunks_pre_embed=_form_bool(export_chunks_pre_embed),
             extract_pdf_images=_form_bool(extract_pdf_images),
+            llm_chunk_summary=False,
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
@@ -252,18 +277,17 @@ def rag_ingest_async(
     dept_tag: str = Form("default"),
     kb_id: str = Form("default"),
     parser: str = Form("auto"),
-    max_chunk_chars: int = Form(1500),
+    pdf_doc_type: str = Form("auto"),
     replace_collection: str = Form("true"),
     export_manifest: str = Form("true"),
     export_chunks_pre_embed: str = Form("true"),
     extract_pdf_images: str = Form("true"),
+    llm_chunk_summary: str = Form("false"),
 ) -> dict[str, Any]:
     """
     异步入库：立即返回 task_id，客户端轮询 ``GET /rag/ingest/tasks/{task_id}`` 查看状态。
     """
     name = (file.filename or "upload").strip() or "upload"
-    if max_chunk_chars < 200 or max_chunk_chars > 32000:
-        raise HTTPException(400, "max_chunk_chars 建议 200~32000")
     tmp_path, name = _save_upload_to_temp(file)
 
     dept = (dept_tag or os.getenv("RAG_DEPT", "default")).strip() or "default"
@@ -286,11 +310,12 @@ def rag_ingest_async(
                 "dept_tag": dept,
                 "kb_id": kb,
                 "parser": parser,
-                "max_chunk_chars": max_chunk_chars,
+                "pdf_doc_type": pdf_doc_type,
                 "replace_collection": _form_bool(replace_collection),
                 "export_manifest": _form_bool(export_manifest),
                 "export_chunks_pre_embed": _form_bool(export_chunks_pre_embed),
                 "extract_pdf_images": _form_bool(extract_pdf_images),
+                "llm_chunk_summary": False,
             },
         }
 
@@ -302,11 +327,12 @@ def rag_ingest_async(
             "dept_tag": dept,
             "kb_id": kb,
             "parser": parser,
-            "max_chunk_chars": max_chunk_chars,
+            "pdf_doc_type": pdf_doc_type,
             "replace_collection": _form_bool(replace_collection),
             "export_manifest": _form_bool(export_manifest),
             "export_chunks_pre_embed": _form_bool(export_chunks_pre_embed),
             "extract_pdf_images": _form_bool(extract_pdf_images),
+            "llm_chunk_summary": False,
         },
     )
     return {"ok": True, "task_id": task_id, "status": "queued"}

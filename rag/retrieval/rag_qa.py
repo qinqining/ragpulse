@@ -72,9 +72,21 @@ def run_rag_qa(
         doc = (h.get("document") or "").strip()
         src = ""
         meta = h.get("metadata") or {}
+        chunk_summary = None
         if isinstance(meta, dict):
             src = str(meta.get("source") or meta.get("page") or "")
-        blocks.append(f"[片段{i + 1}]{(' 来源:' + src) if src else ''}\n{doc}")
+            v = meta.get("chunk_summary")
+            if isinstance(v, str) and v.strip():
+                chunk_summary = v.strip()
+
+        if chunk_summary:
+            blocks.append(
+                f"[片段{i + 1}]{(' 来源:' + src) if src else ''}\n"
+                f"[增强摘要]\n{chunk_summary}\n\n"
+                f"[正文]\n{doc}"
+            )
+        else:
+            blocks.append(f"[片段{i + 1}]{(' 来源:' + src) if src else ''}\n{doc}")
     context = "\n\n".join(blocks) if blocks else "（无检索命中）"
 
     system = (

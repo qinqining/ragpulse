@@ -35,6 +35,33 @@ def collection_name(*, dept: str, kb_id: str, kind: str = "default") -> str:
     return f"ragpulse__{safe(dept)}__{safe(kb_id)}__{safe(kind)}"
 
 
+def parse_collection_name(name: str) -> dict[str, str] | None:
+    """
+    反解析 Chroma collection 名到 ``dept_tag`` / ``kb_id``。
+
+    collection 命名规则：
+    ``ragpulse__{safe(dept)}__{safe(kb_id)}__{safe(kind)}``
+
+    返回示例：
+    ``{"dept_tag": "...", "kb_id": "...", "kind": "...", "collection_name": "..."}``
+    """
+    if not name or not name.startswith("ragpulse__"):
+        return None
+    # delimiter 是双下划线 '__'，collection_name 内部一般只有单下划线
+    parts = name.split("__", 3)
+    if len(parts) != 4:
+        return None
+    prefix, dept_safe, kb_safe, kind_safe = parts
+    if prefix != "ragpulse":
+        return None
+    return {
+        "dept_tag": dept_safe,
+        "kb_id": kb_safe,
+        "kind": kind_safe,
+        "collection_name": name,
+    }
+
+
 def _chroma_add_batch_size() -> int:
     """``RAG_CHROMA_ADD_BATCH_SIZE``：>0 时分批 ``collection.add``；0 或未设置则一次性写入。"""
     try:
