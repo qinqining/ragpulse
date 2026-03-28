@@ -31,8 +31,15 @@
     input[type="file"] { padding: 0.4rem; }
     .checks label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; margin-top: 0.5rem; }
     .checks input { width: auto; }
+    .llm-opt { margin: 0.75rem 0; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #3d4f66; background: #0d1117; }
+    .llm-opt label { display: flex; align-items: flex-start; gap: 0.6rem; font-size: 0.9rem; color: var(--text); margin: 0; cursor: pointer; }
+    .llm-opt input { width: auto; margin-top: 0.2rem; flex-shrink: 0; }
+    .llm-opt .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.35rem; line-height: 1.4; }
     .answer-box { background: #0d1117; border: 1px solid #238636; border-radius: 8px; padding: 1rem; margin-top: 0.75rem; font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; }
     .answer-box .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; }
+    .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
+    .right-col { position: sticky; top: 1.5rem; }
+    @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } .right-col { position: static; } }
   </style>
 </head>
 <body>
@@ -41,7 +48,8 @@
     入库 <code>POST /rag/ingest</code>、检索 <code>POST /rag/retrieve</code>、<strong>整条 RAG+回答</strong> <code>POST /rag/qa</code> 须使用同一 <strong>dept / kb</strong>。
     PDF 默认 deepdoc；多模态 LLM 需配置 <code>RAG_PUBLIC_BASE_URL</code> + <code>LLM_VISION_MODEL</code>，见 <a href="/docs" target="_blank">/docs</a> 与仓库 <code>docs/integrations.md</code>。
   </p>
-
+  <div class="layout">
+    <div class="left-col">
   <div class="card">
     <h2>① 上传文件入库</h2>
     <form id="ingest">
@@ -73,6 +81,17 @@
             <option value="one">通用文档（one）</option>
           </select>
         </div>
+      </div>
+      <div class="llm-opt">
+        <label for="ipresum">
+          <input type="checkbox" id="ipresum" name="llm_chunk_summary" />
+          <span>
+            <strong>LLM 增强摘要</strong>（可选：入库前逐 chunk 调 LLM；<strong>向量用摘要</strong>，库内仍存原文；<code>/rag/qa</code> 会拼摘要+正文）
+          </span>
+        </label>
+        <p class="hint">
+          默认不勾选。勾选后 chunk 多时可能极慢；可用 <code>RAG_LLM_PRE_SUMMARY_MAX_CHUNKS</code>、<code>RAG_LLM_PRE_SUMMARY_MAX_CHUNK_CHARS</code>、<code>LLM_SUMMARY_MODEL</code> 控制。
+        </p>
       </div>
       <div class="row">
         <div class="checks" style="grid-column: span 3;">
@@ -147,12 +166,15 @@
     <div id="qstatus" class="status"></div>
     <div id="qanswer" class="answer-box" style="display:none;"></div>
   </div>
-
+  </div>
+    <div class="right-col">
   <div class="card">
     <h2>命中列表（② 或 ③ 最后一次结果）</h2>
     <div id="hits"></div>
     <h2 style="margin-top:1rem">检索 JSON</h2>
     <pre id="raw">{}</pre>
+  </div>
+    </div>
   </div>
 
   <p class="note">
@@ -229,6 +251,21 @@
     }
     loadKbList();
 
+    (function initLlSummaryPref() {
+      const el = document.getElementById("ipresum");
+      if (!el) return;
+      try {
+        const v = localStorage.getItem("ragpulse_ingest_llm_chunk_summary");
+        if (v === "1" || v === "true") el.checked = true;
+        if (v === "0" || v === "false") el.checked = false;
+      } catch (err) { /* ignore */ }
+      el.addEventListener("change", () => {
+        try {
+          localStorage.setItem("ragpulse_ingest_llm_chunk_summary", el.checked ? "1" : "0");
+        } catch (err) { /* ignore */ }
+      });
+    })();
+
     document.getElementById("ingest").onsubmit = async (e) => {
       e.preventDefault();
       const btn = document.getElementById("ibtn");
@@ -253,7 +290,7 @@
       fd.append("export_manifest", document.getElementById("iexport").checked ? "true" : "false");
       fd.append("export_chunks_pre_embed", document.getElementById("iprechunk").checked ? "true" : "false");
       fd.append("extract_pdf_images", document.getElementById("ipdfimg").checked ? "true" : "false");
-      fd.append("llm_chunk_summary", "false");
+      fd.append("llm_chunk_summary", document.getElementById("ipresum").checked ? "true" : "false");
       try {
         const useAsync = document.getElementById("iasync").checked;
         if (!useAsync) {
@@ -266,6 +303,7 @@
             return;
           }
           st.textContent = "入库完成 · chunks=" + data.chunk_count + " · collection=" + data.collection_name
+            + (data.llm_chunk_summary ? " · 增强摘要=开" : "")
             + (data.ingest_chunks_pre_embed_path ? " · 嵌入前=" + data.ingest_chunks_pre_embed_path : "")
             + (data.ingest_export_path ? " · manifest=" + data.ingest_export_path : "");
           st.classList.add("ok");
@@ -302,6 +340,7 @@
           if (jt.status === "succeeded") {
             const data = jt.result || {};
             st.textContent = "入库完成 · chunks=" + data.chunk_count + " · collection=" + data.collection_name
+              + (data.llm_chunk_summary ? " · 增强摘要=开" : "")
               + (data.ingest_chunks_pre_embed_path ? " · 嵌入前=" + data.ingest_chunks_pre_embed_path : "")
               + (data.ingest_export_path ? " · manifest=" + data.ingest_export_path : "");
             st.classList.add("ok");
@@ -361,8 +400,30 @@
         status.textContent = "完成 · used_vision=" + data.used_vision + (data.vision_note ? " · " + data.vision_note : "");
         status.classList.add("ok");
         ans.style.display = "block";
+        const usedVision = data.used_vision ? "已向 LLM 发送图片" : "未向 LLM 发送图片";
+        // 将检索命中的 chunk 原图也展示在回答框中（无需重新生成，仅引用 metadata.image_uri 导出的 /static/images/...）
+        const imgUris = [];
+        const seenImg = new Set();
+        for (const h of (data.hits || [])) {
+          const list = h.image_uris || [];
+          for (const u of list) {
+            const s = String(u || "").trim();
+            if (!s || seenImg.has(s)) continue;
+            seenImg.add(s);
+            imgUris.push(s);
+          }
+        }
+        const maxThumbs = 6;
+        const thumbsHtml = imgUris.slice(0, maxThumbs).map(u =>
+          `<img src="${escapeAttr(u)}" alt="" style="max-width:100%;max-height:220px;border-radius:6px;margin:0.35rem 0;display:block;" loading="lazy" />`
+        ).join("") || "<span style='color: var(--muted)'>（本次未命中图片）</span>";
+
         ans.innerHTML = "<strong>LLM 回答</strong><br/>" + escapeHtml(data.answer || "(空)")
-          + "<div class='sub'>vision_note: " + escapeHtml(data.vision_note || "—") + "</div>";
+          + "<div class='sub'>视觉：" + usedVision
+          + (data.vision_note ? " · " + escapeHtml(data.vision_note) : "")
+          + "</div>"
+          + "<div class='sub' style='margin-top:0.4rem'>命中图片（原图）：" + "</div>"
+          + thumbsHtml;
         hitsEl.innerHTML = (data.hits || []).map((h, i) => {
           const imgs = (h.image_uris && h.image_uris.length) ? h.image_uris.map(u =>
             `<img src="${escapeAttr(u)}" alt="" style="max-width:100%;max-height:220px;border-radius:6px;margin:0.35rem 0;display:block;" loading="lazy" />`

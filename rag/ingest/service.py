@@ -19,6 +19,7 @@
 - ``export_manifest``：是否在 **已计算 embedding** 后、写入 Chroma 前生成 manifest（含 ``embedding_dim``）。
 - ``export_chunks_pre_embed``：是否在 **调用嵌入 API 之前** 导出纯文本块 JSON（无向量，便于核对解析/分块）。
 - ``extract_pdf_images``：对 **.pdf** 是否用 ``pypdf`` 再抽一层内嵌图，写入 ``web/static/images/``，并在各 chunk 的 ``metadata["image_uri"]`` 中存 **JSON 字符串列表**（路径均为 ``/static/images/...``，无域名）。
+- ``llm_chunk_summary``：为 True 时，在嵌入前对每个 chunk 调 LLM 生成 **增强摘要**；**向量用摘要**，Chroma 仍存原文；``metadata["chunk_summary"]`` 供 ``/rag/qa`` 拼 ``[增强摘要]+[正文]``（chunk 多时会显著变慢，可用 ``RAG_LLM_PRE_SUMMARY_MAX_CHUNKS`` 等限流）。
 
 **输出（返回值 ``dict``，供 HTTP / 脚本展示）**
 
@@ -48,6 +49,7 @@ from rag.utils.ingest_progress import ingest_log, ingest_log_done, ingest_log_st
 _log_svc = logging.getLogger(__name__)
 
 from rag.embedding.qwen_embed import QwenTextEmbedding
+from rag.llm.chat_model import chat_completions
 from rag.ingest.pdf_embedded_images import attach_image_uris_to_metadatas, extract_pdf_embedded_images
 from rag.ingest.parsers import PageExtract, extract_pages, resolve_parser, _strip_position_tags
 from rag.retrieval.chroma_client import ChromaRagStore, collection_name
@@ -379,16 +381,64 @@ def run_ingest(
             extract_engine=pe.engine,
             extract_detail=pe.detail,
             extract_warnings=pe.warnings,
+            max_chunk_chars=0,
             export_path=pre_embed_path,
         )
 
-    # 4) 预摘要已停用：直接对正文 chunks 做 embedding（避免超长耗时）
-    if llm_chunk_summary:
-        ingest_log("llm_chunk_summary=true 已忽略（预摘要功能已停用）")
+    # 4) 可选：入库前对每个 chunk 生成「增强检索摘要」
+    #   - embedding 使用摘要（embed_texts）
+    #   - Chroma documents 仍为原文
+    #   - metadatas["chunk_summary"] 供 /rag/qa 拼接上下文
     embed_texts = texts
+    if llm_chunk_summary:
+        from rag.prompts.generator import chunk_enhanced_summary_prompt
 
-    # 4) 嵌入：调用 DashScope 等（见 qwen_embed 与 .env）
-    ingest_log(f"嵌入 API: 共 {len(embed_texts)} 条")
+        ingest_log(
+            f"LLM 预摘要: chunks={len(texts)}（会显著变慢；可用 RAG_LLM_PRE_SUMMARY_MAX_CHUNKS 限制条数）"
+        )
+        t_sum = ingest_log_start("LLM 生成 chunk_enhanced_summaries")
+
+        sys_prompt = "你是严谨的知识助手。请严格按用户给出的任务要求输出，不要额外解释。"
+        user_prefix = chunk_enhanced_summary_prompt()
+
+        max_chunk_chars_for_llm = int(os.getenv("RAG_LLM_PRE_SUMMARY_MAX_CHUNK_CHARS", "2500") or "2500")
+        max_chunks = int(os.getenv("RAG_LLM_PRE_SUMMARY_MAX_CHUNKS", "0") or "0")
+        model_summary = (os.getenv("LLM_SUMMARY_MODEL") or os.getenv("LLM_MODEL") or "").strip() or None
+
+        summaries: list[str] = []
+        n = len(texts)
+        for i, t in enumerate(texts):
+            if max_chunks > 0 and i >= max_chunks:
+                summaries.append(t)
+                continue
+
+            t0 = (t or "").strip()
+            if max_chunk_chars_for_llm > 0 and len(t0) > max_chunk_chars_for_llm:
+                t0 = t0[:max_chunk_chars_for_llm] + "…"
+
+            if n > 0 and (i == 0 or i == n - 1 or (i + 1) % 5 == 0):
+                ingest_log(f"LLM 预摘要进度 {i + 1}/{n}")
+
+            try:
+                messages = [
+                    {"role": "system", "content": sys_prompt},
+                    {"role": "user", "content": user_prefix + t0},
+                ]
+                summary = chat_completions(messages=messages, model=model_summary)
+                summary = (summary or "").strip()
+                if not summary:
+                    summary = t0
+            except Exception as e:
+                _log_svc.warning("chunk summary failed: i=%s err=%s（已回退原文）", i, e)
+                summary = t0
+
+            metadatas[i]["chunk_summary"] = summary
+            summaries.append(summary)
+
+        embed_texts = summaries
+        ingest_log_done("LLM 生成 chunk_enhanced_summaries", t_sum)
+
+    ingest_log(f"嵌入 API: 共 {len(embed_texts)} 条（embed_texts 在预摘要开启时为摘要）")
     t_emb = ingest_log_start("嵌入 embed_documents")
     emb = QwenTextEmbedding()
     embeddings = emb.embed_documents(embed_texts)

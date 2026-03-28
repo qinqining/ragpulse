@@ -52,7 +52,7 @@ PYTHONPATH=. python test.py
 PYTHONPATH=. uvicorn main:app --host 0.0.0.0 --port 8000
 # 浏览器打开 http://127.0.0.1:8000/  — 上传入库 + 检索（web/static/index.html）
 # 健康检查: GET /health（简版），GET /health/detail（含关键环境变量检查）
-# 入库: POST /rag/ingest  multipart: file, dept_tag, kb_id, parser(auto|pdf|pdf_deepdoc|pdf_pypdf|txt|md|docx), pdf_doc_type, ...
+# 入库: POST /rag/ingest  multipart: file, dept_tag, kb_id, parser(...), pdf_doc_type, llm_chunk_summary(可选，逐 chunk 预摘要+摘要向量), ...
 # 解析器列表: GET /rag/ingest/options
 # 检索: POST /rag/retrieve  JSON: {"query":"...","top_k":5,"dept_tag":"test_rag","kb_id":"attention",...}
 # RAG+回答: POST /rag/qa  JSON: 同上 + 可选 "use_vision":true（需 RAG_PUBLIC_BASE_URL + LLM_VISION_MODEL）

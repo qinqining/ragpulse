@@ -69,10 +69,64 @@ class RAGFlowDocxParser:
         return LazyDocxImage(image_blobs)
 
 
-    def __extract_table_content(self, tb):
-        df = []
-        for row in tb.rows:
-            df.append([c.text for c in row.cells])
+    def __extract_table_content(self, tb, dedup_merged_cells: bool = True):
+        """
+        Extract table cell texts into a DataFrame.
+
+        Note:
+        - Some DOCX tables with merged cells (or template duplication) can expose the same
+          long text in multiple cells when read via python-docx. When dedup_merged_cells
+          is enabled, we apply a conservative de-duplication for *long, identical* cell
+          texts to avoid repeating the same paragraph many times in downstream chunks.
+        """
+        rows = [[c.text for c in row.cells] for row in tb.rows]
+        if dedup_merged_cells and rows:
+            # 1) Global de-dup for very long repeated cells (typical merged-cell artifacts)
+            flat = [t.strip() for r in rows for t in r if isinstance(t, str)]
+            long_counts = Counter([t for t in flat if len(t) >= 200])
+            heavy_dups = {t for t, cnt in long_counts.items() if cnt >= 3}
+            seen_heavy = set()
+
+            # 2) Row-local de-dup for consecutive identical long cells
+            for ri, r in enumerate(rows):
+                prev = None
+                for ci, raw in enumerate(r):
+                    t = raw.strip() if isinstance(raw, str) else ""
+                    if not t:
+                        prev = None
+                        continue
+                    if t in heavy_dups:
+                        if t in seen_heavy:
+                            rows[ri][ci] = ""
+                            continue
+                        seen_heavy.add(t)
+                        prev = t
+                        continue
+                    if prev is not None and t == prev and len(t) >= 30:
+                        rows[ri][ci] = ""
+                        continue
+                    prev = t
+
+            # 3) Row-level majority de-dup (common for merged header cells):
+            # If a value repeats across many columns in the same row, keep only one.
+            for ri, r in enumerate(rows):
+                vals = [(ci, (raw.strip() if isinstance(raw, str) else "")) for ci, raw in enumerate(r)]
+                nonempty = [(ci, v) for ci, v in vals if v]
+                if len(nonempty) < 4:
+                    continue
+                cnt = Counter([v for _, v in nonempty])
+                most_val, most_cnt = cnt.most_common(1)[0]
+                if most_cnt >= 3 and most_cnt / len(nonempty) >= 0.5 and len(most_val) >= 5:
+                    kept = False
+                    for ci, v in nonempty:
+                        if v != most_val:
+                            continue
+                        if not kept:
+                            kept = True
+                            continue
+                        rows[ri][ci] = ""
+
+        df = rows
         return self.__compose_table_content(pd.DataFrame(df))
 
     def __compose_table_content(self, df):
@@ -158,7 +212,7 @@ class RAGFlowDocxParser:
             return lines
         return ["\n".join(lines)]
 
-    def __call__(self, fnm, from_page=0, to_page=100000000):
+    def __call__(self, fnm, from_page=0, to_page=100000000, dedup_merged_cells: bool = True):
         self.doc = Document(fnm) if isinstance(
             fnm, str) else Document(BytesIO(fnm))
         pn = 0 # parsed page
@@ -180,5 +234,5 @@ class RAGFlowDocxParser:
 
             secs.append(("".join(runs_within_single_paragraph), p.style.name if hasattr(p.style, 'name') else '')) # then concat run.text as part of the paragraph
 
-        tbls = [self.__extract_table_content(tb) for tb in self.doc.tables]
+        tbls = [self.__extract_table_content(tb, dedup_merged_cells=dedup_merged_cells) for tb in self.doc.tables]
         return secs, tbls

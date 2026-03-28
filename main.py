@@ -259,7 +259,7 @@ def rag_ingest(
             export_manifest=_form_bool(export_manifest),
             export_chunks_pre_embed=_form_bool(export_chunks_pre_embed),
             extract_pdf_images=_form_bool(extract_pdf_images),
-            llm_chunk_summary=False,
+            llm_chunk_summary=_form_bool(llm_chunk_summary),
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
@@ -315,7 +315,7 @@ def rag_ingest_async(
                 "export_manifest": _form_bool(export_manifest),
                 "export_chunks_pre_embed": _form_bool(export_chunks_pre_embed),
                 "extract_pdf_images": _form_bool(extract_pdf_images),
-                "llm_chunk_summary": False,
+                "llm_chunk_summary": _form_bool(llm_chunk_summary),
             },
         }
 
@@ -332,7 +332,7 @@ def rag_ingest_async(
             "export_manifest": _form_bool(export_manifest),
             "export_chunks_pre_embed": _form_bool(export_chunks_pre_embed),
             "extract_pdf_images": _form_bool(extract_pdf_images),
-            "llm_chunk_summary": False,
+            "llm_chunk_summary": _form_bool(llm_chunk_summary),
         },
     )
     return {"ok": True, "task_id": task_id, "status": "queued"}

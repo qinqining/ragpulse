@@ -105,7 +105,13 @@ def run_rag_qa(
         used_vision = len(image_urls) > 0
 
     if used_vision:
-        model = (os.getenv("LLM_VISION_MODEL") or os.getenv("LLM_MODEL") or "qwen-vl-plus").strip()
+        # 优先使用显式的视觉模型；否则回退到 .env 的 VISION_MODEL（仓库默认就用它），再退回纯文本 LLM_MODEL。
+        model = (
+            os.getenv("LLM_VISION_MODEL")
+            or os.getenv("VISION_MODEL")
+            or os.getenv("LLM_MODEL")
+            or "qwen-vl-plus"
+        ).strip()
         content: list[dict[str, Any]] = [{"type": "text", "text": user_text}]
         for u in image_urls:
             content.append({"type": "image_url", "image_url": {"url": u}})

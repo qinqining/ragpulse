@@ -67,6 +67,15 @@ class RAGFlowPdfParser:
 
         """
 
+        # ---------------------------
+        # 解析器整体结构（高层概念）
+        # ---------------------------
+        # 1) OCR：把每页图像（渲染后的 PDF 页面）识别成字符/文本框（self.page_chars / self.boxes）
+        # 2) Layout：版面分析，把文本框分类为 text/title/table/figure 等 layout_type（self._layouts_rec）
+        # 3) Table：表格结构识别（self._table_transformer_job），把 table 区域转为结构化行列/HTML
+        # 4) Merge：把碎片文本做“行内/段落/跨栏”合并（_text_merge、_concat_downward、_filter_forpages）
+        #
+        # 最终输出通常是：按 reading order 排序的 boxes（带位置标签 @@...##），以及表格/图片块 tbls。
         self.ocr = OCR()
         self.parallel_limiter = None
         if settings.PARALLEL_DEVICES > 1:
@@ -90,6 +99,8 @@ class RAGFlowPdfParser:
         self.tbl_det = TableStructureRecognizer()
 
         self.updown_cnt_mdl = xgb.Booster()
+        # updown_cnt_mdl：用于判定“上下两个文本框是否应该拼接成同一段”的 XGBoost 模型。
+        # 例如：跨行断句、分页续写、两栏/缩进等情况，通过一组特征（位置、标点、词形等）预测是否 concat。
         try:
             pip_install_torch()
             import torch.cuda
@@ -124,6 +135,8 @@ class RAGFlowPdfParser:
         return (b["top"] + b["bottom"] - a["top"] - a["bottom"]) / 2
 
     def _match_proj(self, b):
+        # 判断某一行/块是否像“条目/编号/项目符号”（法律条款、目录、列表项等）。
+        # 该信号会参与上下文拼接的特征，避免把不同条目错误地合并。
         proj_patt = [
             r"第[零一二三四五六七八九十百]+章",
             r"第[零一二三四五六七八九十百]+[条节]",
@@ -137,6 +150,11 @@ class RAGFlowPdfParser:
         return any([re.match(p, b["text"]) for p in proj_patt])
 
     def _updown_concat_features(self, up, down):
+        # 生成“up 与 down 是否应拼接”为同一段落的特征向量（供 updown_cnt_mdl 预测）。
+        # 特征大体分为三类：
+        # - 版面几何：y 距离/页差/x 距离/高度差/同一行同一列等
+        # - 文本形态：结尾标点、是否以逗号/冒号续写、括号是否闭合、大小写/数字等
+        # - 分词/词性：截取 up 末尾与 down 开头做 tokenize，对齐/差异等
         w = max(self.__char_width(up), self.__char_width(down))
         h = max(self.__height(up), self.__height(down))
         y_dis = self._y_dis(up, down)
@@ -183,7 +201,11 @@ class RAGFlowPdfParser:
 
     @staticmethod
     def sort_X_by_page(arr, threshold):
-        # sort using y1 first and then x1
+        # 将 boxes 在每页内按“阅读顺序”做排序：
+        # - 先按 (page_number, x0, top) 粗排
+        # - 再用 threshold（列宽阈值）做局部交换，把同列内 top 更靠上的块提前
+        #
+        # 这个排序对两栏论文尤其关键：如果只按 y 排，很容易左右栏互相穿插。
         arr = sorted(arr, key=lambda r: (r["page_number"], r["x0"], r["top"]))
         for i in range(len(arr) - 1):
             for j in range(i, -1, -1):
@@ -413,7 +435,8 @@ class RAGFlowPdfParser:
 
         return best_angle, best_img, results
 
-    def _table_transformer_job(self, ZM, auto_rotate=True):
+    def 
+    _table_transformer_job(self, ZM, auto_rotate=True):
         """
         Process table structure recognition.
 
@@ -1714,6 +1737,16 @@ class RAGFlowPdfParser:
         if auto_rotate_tables is None:
             auto_rotate_tables = os.getenv("TABLE_AUTO_ROTATE", "true").lower() in ("true", "1", "yes")
 
+        # ---------------------------
+        # 主解析流程（RAGFlow deepdoc 的 PDF 路径）
+        # ---------------------------
+        # 1) __images__: PDF → 渲染为 page_images，并对每页 OCR 得到字符/文本框（boxes）
+        # 2) _layouts_rec: 版面分析（layout_recognizer），给每个 box 标注 layout_type
+        # 3) _table_transformer_job: 表格结构识别（可选自动旋转），得到表格内容
+        # 4) _text_merge: 初步文本合并（去噪、同一块合并等）
+        # 5) _concat_downward: 使用 updown_cnt_mdl 决定上下段是否应拼接，形成更大语义段
+        # 6) _filter_forpages: 根据 page_from/page_to 等窗口裁剪
+        # 7) _extract_table_figure: 抽取表格/图片块（need_image 控制）
         self.__images__(fnm, zoomin)
         self._layouts_rec(zoomin)
         self._table_transformer_job(zoomin, auto_rotate=auto_rotate_tables)
@@ -1721,6 +1754,7 @@ class RAGFlowPdfParser:
         self._concat_downward()
         self._filter_forpages()
         tbls = self._extract_table_figure(need_image, zoomin, return_html, False)
+        # boxes 内部通常仍带位置标签（@@页码…##），供后续“按页绑定图片/定位引用”使用。
         return self.__filterout_scraps(deepcopy(self.boxes), zoomin), tbls
 
     def parse_into_bboxes(self, fnm, callback=None, zoomin=3):
@@ -2057,4 +2091,18 @@ class VisionParser(RAGFlowPdfParser):
 
 
 if __name__ == "__main__":
-    pass
+    # 用法：PYTHONPATH=<项目根> python deepdoc/parser/pdf_parser.py /path/to/file.pdf
+    if len(sys.argv) < 2:
+        print("用法: python deepdoc/parser/pdf_parser.py <pdf路径> [--no-image] [--zoom N]", file=sys.stderr)
+        sys.exit(2)
+    path = sys.argv[1]
+    need_image = "--no-image" not in sys.argv
+    zoomin = 3
+    if "--zoom" in sys.argv:
+        i = sys.argv.index("--zoom")
+        if i + 1 < len(sys.argv):
+            zoomin = int(sys.argv[i + 1])
+    text, tbls = RAGFlowPdfParser()(fnm=path, need_image=need_image, zoomin=zoomin)
+    print("=== 文本块（含 @@页\\t坐标…## 标签）===")
+    print(text)
+    print("=== 表格/图块数量 ===", len(tbls))

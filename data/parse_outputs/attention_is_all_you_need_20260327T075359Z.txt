@@ -1,0 +1,438 @@
+Provided proper attribution is provided, Google hereby grants permission to@@1	123.0	489.0	71.0	86.0##
+reproduce the tables and figures in this paper solely for use in journalistic or@@1	122.0	489.0	86.0	100.0##
+scholarly works.@@1	265.5	347.0	99.0	113.0##
+
+AttentionIsAllYouNeed@@1	212.0	399.0	149.5	163.5##
+AshishVaswani*@@1	132.0	203.0	233.5	245.0##
+NoamShazeer*@@1	238.0	303.5	233.5	245.0##
+Niki Parmar*@@1	337.5	396.0	233.5	245.0##
+JakobUszkoreit*@@1	423.0	496.5	233.5	245.0##
+Google Research@@1	328.5	402.5	244.0	258.0##
+Google Research@@1	422.5	495.5	244.0	258.0##
+nikip@google.com@@1	322.5	408.5	256.5	268.0##
+usz@google.com@@1	421.5	496.5	256.5	268.0##
+LukaszKaiser*@@1	393.5	459.0	284.0	295.5##
+University of Toronto@@1	243.0	333.5	295.5	307.0##
+llion@google.com@@1	124.0	213.0	304.5	318.5##
+aidan@cs.toronto.edu@@1	233.5	342.0	305.0	317.0##
+Illia Polosukhin*@@1	266.0	349.0	333.5	347.5##
+illia.polosukhin@gmail.com@@1	238.0	375.0	345.5	357.0##
+
+Abstract@@1	283.5	329.5	386.0	397.5##
+The dominant sequence transduction models are based on complex recurrent or@@1	143.0	469.0	412.5	424.0##
+convolutional neural networks that include an encoder and a decoder.The best@@1	143.0	470.0	424.0	435.0##
+performing models also connect the encoder and decoder through an attention@@1	143.0	470.0	435.0	446.5##
+mechanism.We propose a new simple network architecture, the Transformer,@@1	143.0	470.0	445.5	457.0##
+based solely on attention mechanisms, dispensing with recurrence and convolutions@@1	143.0	470.0	456.0	468.0##
+entirely.Experiments on two machine translation tasks show these models to@@1	143.0	470.0	468.0	479.5##
+be superior in quality while being more parallelizable and requiring significantly@@1	143.0	469.0	478.5	490.0##
+less time to train. Our model achieves 28.4 BLEU on the WMT 2014 English-@@1	143.0	470.0	489.0	501.0##
+to-German translation task, improving over the existing best results, including@@1	143.0	469.0	500.0	511.5##
+ensembles,by over 2 BLEU. On the WMT 2014 English-to-French translation task,@@1	143.0	470.0	510.5	522.0##
+our model establishes a new single-model state-of-the-art BLEU score of 41.8 after@@1	143.0	470.0	521.5	533.0##
+training for 3.5 days on eight GPUs, a small fraction of the training costs of the@@1	143.0	469.0	533.0	544.5##
+best models from the literature. We show that the Transformer generalizes well to@@1	142.0	470.0	543.0	557.0##
+other tasks by applying it successfully to English constituency parsing both with@@1	143.0	469.0	555.0	567.0##
+
+1Introduction@@2	105.0	192.0	70.0	84.0##
+Recurrent neural networks,long short-termmemory[13] and gated recurrent [7] neural networks@@2	107.5	504.0	99.0	109.5##
+in particular, have been firmly established as state of the art approaches in sequence modeling and@@2	106.5	505.5	109.0	123.0##
+transduction problems such as language modeling and machine translation [35, 2, 5]. Numerous@@2	107.5	504.5	121.5	133.0##
+efforts have since continued to push the boundaries of recurrent language models and encoder-decoder@@2	107.5	504.5	132.0	143.5##
+Recurrent models typically factor computation along the symbol positions of the input and output@@2	107.5	504.5	158.5	170.0##
+sequences. Aligning the positions to steps in computation time, they generate a sequence of hidden@@2	108.0	504.5	170.0	181.5##
+states ht, as a function of the previous hidden state ht-1 and the input for position t. This inherently@@2	107.5	504.0	180.5	192.0##
+sequential nature precludes parallelization within training examples, which becomes critical at longer@@2	106.5	504.5	190.5	204.5##
+sequence lengths, as memory constraints limit batching across examples.Recent work has achieved@@2	108.0	504.5	203.0	214.5##
+significant improvements in computational efficiency through factorization tricks [21] and conditional@@2	108.0	504.5	213.5	225.0##
+computation [32], while also improving model performance in case of the latter. The fundamental@@2	108.0	504.5	224.5	236.0##
+Attention mechanisms have become an integral part of compelling sequence modeling and transduc-@@2	107.5	504.5	251.0	265.0##
+tion models in various tasks, allowing modeling of dependencies without regard to their distance in@@2	107.5	504.5	263.0	274.0##
+the input or output sequences [2, 19]. In all but a few cases [27], however, such attention mechanisms@@2	106.5	505.5	272.0	286.5##
+In this work we propose the Transformer, a model architecture eschewing recurrence and instead@@2	106.5	505.5	299.5	313.5##
+relying entirely on an attention mechanism to draw global dependencies between input and output.@@2	107.5	504.5	312.0	323.5##
+The Transformer allows for significantly more parallelization and can reach a new state of the art in@@2	106.5	504.5	321.5	333.5##
+translation quality after being trained for as little as twelve hours on eight Pi0o GPUs.@@2	106.5	452.5	334.0	345.0##
+
+constraint ofsequentialcomputation,however,remains.@@2	108.0	330.0	236.0	246.5##
+
+2Background@@2	105.5	189.5	363.0	377.0##
+The goal of reducing sequential computation also forms the foundation of the Extended Neural GPU@@2	107.5	504.5	389.5	401.0##
+[16], ByteNet [18] and ConvS2S [9], all of which use convolutional neural networks as basic building@@2	107.5	504.5	400.0	411.5##
+block, computing hidden representations in parallel for all input and output positions. In these models,@@2	105.5	505.5	409.0	423.0##
+the number of operations required to relate signals from two arbitrary input or output positions grows@@2	107.5	504.5	422.5	434.0##
+in the distance between positions, linearly for ConvS2S and logarithmically for ByteNet. This makes@@2	107.5	504.5	433.0	444.5##
+it more difficult to learn dependencies between distant positions [12]. In the Transformer this is@@2	106.5	504.5	444.0	455.5##
+reduced to a constant number of operations, albeit at the cost of reduced effective resolution due@@2	106.5	504.5	454.5	466.0##
+to averaging attention-weighted positions, an effect we counteract with Multi-Head Attention as@@2	106.5	504.5	466.0	477.5##
+Self-attention, sometimes called intra-attention is an attention mechanism relating different positions@@2	107.5	504.5	492.5	504.0##
+of a single sequence in order to compute a representation of the sequence. Self-attention has been@@2	107.5	504.5	504.0	515.5##
+used successfully in a variety of tasks including reading comprehension, abstractive summarization,@@2	106.5	506.5	514.0	528.0##
+textual entailment and learning task-independent sentence representations [4, 27,28,22]@@2	106.5	461.5	525.5	537.0##
+End-to-end memory networks are based on a recurrent attention mechanism instead of sequence-@@2	105.5	504.5	539.5	553.5##
+aligned recurrence and have been shown to perform well on simple-language question answering and@@2	106.5	505.5	551.0	565.0##
+To the best of our knowledge, however, the Transformer is the first transduction model relying@@2	107.5	504.0	580.0	591.5##
+entirely on self-attention to compute representations of its input and output without using sequence-@@2	107.5	504.5	591.5	603.0##
+aligned RNNs or convolution. In the following sections, we will describe the Transformer, motivate@@2	106.5	505.5	601.5	615.5##
+self-attention and discuss its advantages over models such as [17, 18] and [9].@@2	107.5	417.5	613.0	624.5##
+
+3ModelArchitecture@@2	105.0	228.0	640.0	654.0##
+Most competitive neural sequence transduction models have an encoder-decoder structure [5,2, 35]@@2	105.5	504.5	667.5	679.0##
+Here, the encoder maps an input sequence of symbol representations (c1,.,n） to a sequence@@2	106.5	504.5	679.0	690.5##
+of continuous representations Z =(z1,., Zn). Given z, the decoder then generates an output@@2	107.5	504.5	690.5	702.0##
+sequence (y1,,Ym) of symbols one element at a time. At each step the model is auto-regressive@@2	106.5	505.5	700.5	714.5##
+[10], consuming the previously generated symbols as additional input when generating the next.@@2	106.5	489.0	713.0	724.5##
+
+The Transformer follows this overall architecture using stacked self-attention and point-wise, fully@@3	107.5	504.0	436.5	448.0##
+connected layers for both the encoder and decoder, shown in the left and right halves of Figure 1,@@3	106.5	504.5	447.0	458.5##
+respectively.@@3	106.5	158.0	458.0	469.5##
+3.1Encoder andDecoderStacks@@3	105.5	253.5	481.0	492.5##
+Encoder:The encoder is composed of a stack of N = 6 identical layers.Each layer has two@@3	106.5	505.5	501.5	513.0##
+sub-layers. The first is a multi-head self-attention mechanism, and the second is a simple, position-@@3	106.5	505.5	513.0	524.5##
+wise fully connected feed-forward network.We employ a residual connection[11] around each of@@3	107.5	505.5	524.0	535.5##
+the two sub-layers, followed by layer normalization [1]. That is, the output of each sub-layer is@@3	105.5	505.5	535.5	547.0##
+LayerNorm(c + Sublayer(c)), where Sublayer(c)is the function implemented by the sub-layer@@3	106.5	505.5	546.0	557.5##
+itself. To facilitate these residual connections, all sub-layers in the model, as well as the embedding@@3	106.5	505.5	557.0	568.5##
+Decoder: The decoder is also composed of a stack of N = 6 identical layers. In addition to the two@@3	106.5	505.5	590.5	602.5##
+sub-layers in each encoder layer, the decoder inserts a third sub-layer, which performs multi-head@@3	106.5	505.5	602.5	614.0##
+attention over the output of the encoder stack. Similar to the encoder, we employ residual connections@@3	106.5	505.5	613.0	624.5##
+around each of the sub-layers, followed by layer normalization.We also modify the self-attention@@3	106.5	505.5	623.5	635.0##
+sub-layer in the decoder stack to prevent positions from attending to subsequent positions. This@@3	105.0	506.5	633.5	647.5##
+masking, combined with fact that the output embeddings are offset by one position, ensures that the@@3	105.0	506.5	643.5	657.5##
+predictions for position i can depend only on the known outputs at positions less than i.@@3	106.5	457.5	656.5	668.0##
+
+layers, produce outputs of dimension dmodel = 512.@@3	105.5	312.5	567.0	581.0##
+
+3.2Attention@@3	106.5	173.0	680.5	691.5##
+An attention function can be described as mapping a query and a set of key-value pairs to an output,@@3	106.5	504.5	701.5	713.0##
+where the query, keys, values, and output are all vectors. The output is computed as a weighted sum@@3	105.5	504.5	712.0	723.5##
+
+of the values, where the weight assigned to each value is computed by a compatibility function of the@@4	106.5	504.0	317.0	328.5##
+
+query with the corresponding key.@@4	105.5	244.5	326.5	341.0##
+3.2.1ScaledDot-ProductAttention@@4	105.5	265.5	349.0	361.5##
+We call our particular attention"Scaled Dot-Product Attention" (Figure 2). The input consists of@@4	107.5	504.5	369.5	381.0##
+queries and keys of dimension dk,and values of dimension dy.We compute the dot products of the@@4	107.5	504.5	380.5	392.0##
+query with all keys, divide each by √dk, and apply a softmax function to obtain the weights on the@@4	105.0	505.5	390.0	404.5##
+values.@@4	106.5	136.5	402.5	414.0##
+In practice, we compute the attention function on a set of queries simultaneously, packed together@@4	106.5	504.5	418.5	430.0##
+into a matrix Q. The keys and values are also packed together into matrices K and V. We compute@@4	107.5	505.5	430.0	441.5##
+
+thematrix of outputs as:@@4	105.5	205.5	439.5	451.0##
+QKT@@4	353.5	378.0	466.5	478.0##
+Attention(Q,K, V) = softmax(@@4	219.5	355.0	472.5	484.5##
+√dk@@4	357.5	377.5	479.5	491.5##
+
+The two most commonly used attention functions are additive attention [2], and dot-product (multi-@@4	107.5	504.5	499.0	510.5##
+plicative) attention. Dot-product attention is identical to our algorithm, except for the scaling factor@@4	107.5	504.5	510.0	521.5##
+ of s. Additive attention computes the compatibility function using a fed-forward network with@@4	105.0	506.5	520.0	536.0##
+a single hiddenlayer.While the two are similar in theoretical complexity,dot-product attention is@@4	105.5	504.0	533.0	544.5##
+much faster and more space-efficient in practice, since it can be implemented using highly optimized@@4	107.5	504.5	545.5	557.0##
+While for small values of d the two mechanisms perform similarly, additive attention outperforms@@4	106.5	504.0	571.5	583.5##
+dot product attention without scaling for larger values of dk [3]. We suspect that for large values of@@4	107.5	505.5	583.5	595.0##
+dk, the dot products grow large in magnitude, pushing the softmax function into regions where it has@@4	107.5	505.5	594.0	605.5##
+extremely small gradients  To counteract this effect, we scale the dot products by@@4	104.0	459.0	600.5	618.0##
+Instead of performing a single attention function with dmodel-dimensional keys, values and queries,@@4	107.5	504.5	649.5	661.0##
+we found it beneficial to linearly project the queries, keys and values h times with different, learned@@4	107.5	504.5	660.0	671.5##
+linear projections to dk, dk and d, dimensions,respectively. On each of these projected versions of@@4	107.5	504.5	671.5	683.0##
+queries, keys and values we then perform the attention function in parallel, yielding d,-dimensional@@4	106.5	504.5	681.5	695.5##
+4To ilustrate why the dot products get large, assume that the components of q and k are independent random@@4	119.0	505.5	699.0	713.0##
+variables with mean O and variance 1. Then their dot product, q · k = ≥1 qak, has mean O and variance dk.@@4	107.5	504.0	712.0	726.0##
+
+3.2.2Multi-HeadAttention@@4	106.5	232.0	629.5	641.0##
+
+ output values. These are concatenated and once again projected, resulting in the final values, as@@5	105.5	505.5	72.5	86.5##
+Multi-head attention allows the model to jointly attend to information from different representation@@5	106.5	504.5	101.5	113.0##
+subspaces at different positions. With a single attention head, averaging inhibits this.@@5	108.0	445.5	113.0	124.5##
+
+MultiHead(Q, K, V) = Concat(head1, ., headh)WO@@5	184.5	412.5	147.0	161.0##
+where head; = Attention(QW,KWK, VW)@@5	223.5	425.5	162.5	176.5##
+
+Where the projections are parameter matrices WQ E Rdmodel xde, WK E Rdmodel xds, WV E Rdmodal xd@@5	104.5	503.0	203.0	219.5##
+In this work we employ h = 8 parallel attention layers,or heads. For each of these we use@@5	106.5	504.0	234.5	246.0##
+dk= dy = dmodel/h = 64.Due to the reduced dimension of each head,the total computational cost@@5	107.5	504.5	246.0	257.5##
+
+is similar to that of single-head attention with full dimensionality.@@5	107.5	369.0	256.5	268.0##
+3.2.3Applications of Attention in ourModel@@5	107.5	304.5	280.5	292.0##
+The Transformer uses multi-head attention in three different ways:@@5	105.5	374.0	297.0	311.0##
+
+·In"encoder-decoder attention"layers, the queries come from the previous decoder layer,@@5	133.0	504.5	319.5	331.0##
+and the memory keys and values come from the output of the encoder. This allows every@@5	142.0	504.5	330.0	344.0##
+position in the decoder to attend over all positions in the input sequence. This mimics the@@5	143.0	504.5	342.5	354.0##
+typical encoder-decoder attention mechanisms in sequence-to-sequence models such as@@5	141.5	505.5	351.5	365.5##
+[38,2,9].@@5	143.0	183.0	364.0	375.5##
+·The encoder contains self-attention layers. In a self-attention layer all of the keys,values@@5	133.0	504.0	378.5	390.0##
+and queries come from the same place, in this case,the output of the previous layer in the@@5	144.0	504.5	391.0	402.5##
+encoder. Each position in the encoder can attend to all positions in the previous layer of the@@5	143.0	504.5	402.0	413.5##
+encoder.@@5	144.0	177.0	414.0	423.0##
+·Similarly, self-attention layers in the decoder allow each position in the decoder to attend to@@5	133.0	504.0	427.5	439.0##
+all positions in the decoder up to and including that position. We need to prevent leftward@@5	144.0	504.5	439.5	451.5##
+informationflowin the decoder to preserve the auto-regressive property.We implement this@@5	144.0	504.5	450.5	462.0##
+inside of scaled dot-product attention by masking out (setting to -oo) all values in the input@@5	143.0	504.0	460.5	472.0##
+of the softmax which correspond to illegal connections. See Figure 2.@@5	143.0	421.0	472.5	484.5##
+
+3.3Position-wiseFeed-ForwardNetworks@@5	106.5	292.5	496.5	507.5##
+In addition to attention sub-layers, each of the layers in our encoder and decoder contains a fully@@5	107.5	504.0	518.0	529.5##
+connected feed-forward network, which is applied to each position separately and identically. This@@5	107.5	505.5	528.0	542.0##
+consists of twolinear transformationswith a ReLU activation in between.@@5	107.5	401.0	538.5	550.5##
+FFN(c) = max(0,cW1 + b1)W2 + b2@@5	225.5	386.0	566.0	580.0##
+While thelinear transformations are the same across different positions,they use different parameters@@5	106.5	504.0	589.0	600.5##
+from layer to layer. Another way of describing this is as two convolutions with kernel size 1.@@5	105.5	505.5	599.0	613.0##
+The dimensionality of input and output is dmodel = 512, and the inner-layer has dimensionality@@5	106.5	504.5	611.5	625.5##
+dff=2048.@@5	106.5	158.5	624.0	635.5##
+3.4Embeddings andSoftmax@@5	107.5	241.0	648.5	660.0##
+Similarly to other sequence transduction models, we use learned embeddings to convert the input@@5	107.5	504.5	669.0	680.5##
+tokens and output tokens to vectors of dimension dmodel. We also use the usual learned linear transfor-@@5	105.5	506.5	679.0	693.0##
+mation and softmax function to convert the decoder output to predicted next-token probabilities. In@@5	107.5	504.5	690.5	702.0##
+our model, we share the same weight matrix between the two embeddinglayers and the pre-softmax@@5	108.0	504.0	702.0	713.0##
+linear transformation, similar to [30]. In the embedding layers, we multiply those weights by dmodel.@@5	105.5	505.5	710.5	724.5##
+
+3.5Positional Encoding@@6	105.0	217.0	211.0	225.0##
+Since our model contains no recurrence and no convolution, in order for the model to make use of the@@6	107.5	504.5	233.5	245.0##
+order of the sequence, we must inject some information about the relative or absolute position of the@@6	105.5	505.5	242.5	256.5##
+tokens in the sequence. To this end, we add "positional encodings" to the input embeddings at the@@6	107.5	504.5	255.0	266.5##
+bottoms of the encoder and decoder stacks.The positional encodings have the same dimension dmodel@@6	105.5	504.0	265.0	276.5##
+as the embeddings, so that the two can be summed. There are many choices of positional encodings,@@6	105.5	505.5	274.5	288.5##
+In this work, we use sine and cosine functions of different frequencies:@@6	107.5	390.0	304.5	316.0##
+PE(pos,2i) = sin(pos/100002i/dmodel)@@6	232.5	386.5	336.0	353.0##
+PE(pos,2i+1) = cos(pos / 100002i/dmodel)@@6	223.5	387.5	352.5	369.5##
+where pos is the position and ? is the dimension. That is,each dimension of the positional encoding@@6	107.5	504.5	377.0	388.5##
+corresponds to a sinusoid. The wavelengths form a geometric progression from 2π to 10000 . 2π. We@@6	105.5	505.5	387.0	401.0##
+chose this function because we hypothesized it would allow the model to easily learn to attend by@@6	107.5	504.0	399.5	411.0##
+relative positions, since for any fixed offset k, PEpos+k can be represented as a linear function of@@6	107.5	504.5	411.0	422.5##
+PEpos.@@6	107.5	139.0	421.0	433.0##
+We also experimented with using learned positional embeddings [9] instead, and found that the two@@6	107.5	504.5	437.0	449.0##
+versions produced nearly identical results(see Table 3 row (E)).We chose the sinusoidalversion@@6	107.5	504.5	449.0	459.5##
+because it may allow themodelto extrapolate to sequence lengths longer than the ones encountered@@6	106.5	504.0	458.5	469.5##
+
+duringtraining.@@6	106.0	169.5	469.5	481.0##
+4WhySelf-Attention@@6	105.5	225.5	496.0	508.0##
+In this section we compare various aspects of self-attention layers to the recurrent and convolu-@@6	106.5	505.5	520.0	534.0##
+tional layers commonly used for mapping one variable-length sequence of symbol representations@@6	106.5	505.5	531.5	545.5##
+(1,, &n) to another sequence of equal length (z1, , Zn), with Ti, Z E Rd, such as a hidden@@6	105.5	505.5	542.0	556.0##
+layer in a typical sequence transduction encoder or decoder. Motivating our use of self-attention we@@6	107.5	504.5	554.5	566.0##
+ One is the total computational complexity per layer. Another is the amount of computation that can@@6	105.5	505.5	579.0	593.0##
+be parallelized, as measured by the minimum number of sequential operations required.@@6	106.5	456.5	592.5	604.0##
+The third is the path length between long-range dependencies in the network. Learning long-range@@6	107.5	504.5	609.0	620.5##
+dependencies is a key challenge in many sequence transduction tasks. One key factor affecting the@@6	107.5	504.5	619.5	631.0##
+ability to learn such dependencies is the length of the paths forward and backward signals have to@@6	107.5	504.0	629.5	641.0##
+traverse in the network.The shorter these pathsbetween any combination of positions in the input@@6	106.5	504.5	642.0	652.5##
+and output sequences, the easier it is to learn long-range dependencies [12]. Hence we also compare@@6	107.5	504.5	652.5	664.0##
+the maximum path length between any two input and output positions in networks composed of the@@6	107.5	504.5	663.5	675.0##
+As noted in Table 1, a self-attention layer connects all positions with a constant number of sequentially@@6	107.5	504.0	690.5	702.0##
+executed operations, whereas a recurrent layer requires O(n) sequential operations. In terms of@@6	106.5	505.5	700.5	714.5##
+computational complexity, self-attention layers are faster than recurrent layers when the sequence@@6	108.0	504.5	713.0	724.5##
+
+length n is smaller than the representation dimensionality d, which is most often the case with@@7	107.5	504.5	74.0	86.0##
+sentencerepresentations used by state-of-the-art models inmachine translations,such as word-piece@@7	108.0	504.5	86.0	96.5##
+[38] and byte-pair [31] representations. To improve computational performance for tasks involving@@7	107.5	504.5	96.5	108.0##
+very long sequences, self-attention could be restricted to considering only a neighborhood of size r in@@7	107.5	504.5	107.0	119.0##
+the input sequence centered around the respective output position. This would increase the maximum@@7	106.5	504.0	117.0	128.5##
+path length to O(n/r). We plan to investigate this approach further in future work.@@7	107.5	437.5	128.5	140.0##
+A single convolutional layer with kernel width k < n does not connect all pairs of input and output@@7	108.0	504.5	145.0	157.0##
+positions.Doing so requires a stack of O(n/k) convolutional layers in the case of contiguous kernels,@@7	107.5	504.5	156.5	167.5##
+or O(logk(n)) in the case of dilated convolutions [18], increasing the length of the longest paths@@7	105.5	505.5	165.0	179.0##
+between any two positions in the network. Convolutional layers are generally more expensive than@@7	106.5	504.0	178.0	189.5##
+recurrent layers,by a factor of k.Separable convolutions [6],however, decrease the complexity@@7	107.5	504.0	189.0	200.5##
+considerably, to O(k · n · d + n · d²). Even with k = n, however, the complexity of a separable@@7	105.5	505.5	198.0	212.0##
+convolution is equal to the combination of a self-attention layer and a point-wise feed-forward layer,@@7	107.5	505.5	211.0	223.0##
+As side benefit,self-attention could yield more interpretable models.We inspect attention distributions@@7	107.5	504.5	237.0	248.5##
+from our models and present and discuss examples in the appendix. Not only do individual attention@@7	105.5	505.5	246.5	260.5##
+heads clearly learn to perform different tasks, many appear to exhibit behavior related to the syntactic@@7	106.5	504.5	259.0	273.0##
+
+and semantic structure of the sentences.@@7	106.5	266.0	270.5	282.0##
+5Training@@7	106.0	171.5	298.5	311.0##
+This section describes the training regime for our models.@@7	106.5	337.0	325.0	336.5##
+5.1Training Data and Batching@@7	105.5	252.0	350.5	364.5##
+We trained on the standard WMT 2014 English-German dataset consisting of about 4.5 million@@7	106.5	504.0	373.5	385.5##
+sentence pairs. Sentences were encoded using byte-pair encoding [3], which has a shared source-@@7	108.0	504.5	384.5	396.0##
+target vocabulary of about 370o0 tokens. For English-French, we used the significantly larger WMT@@7	107.5	504.0	395.0	406.5##
+2014English-French dataset consisting of 36M sentences and split tokens intoa 32000word-piece@@7	107.5	504.5	405.0	416.5##
+vocabulary [38]. Sentence pairs were batched together by approximate sequence length.Each training@@7	106.5	503.0	417.5	429.0##
+batch contained a set of sentence pairs containing approximately 25000 source tokens and 25000@@7	105.5	504.5	426.5	440.5##
+targettokens.@@7	107.5	162.0	439.5	451.5##
+5.2HardwareandSchedule@@7	106.5	233.5	464.5	476.0##
+We trained our models on one machine with 8 NVIDIA P100 GPUs.For our base models using@@7	106.5	504.0	486.0	497.5##
+the hyperparameters described throughout the paper, each training step took about 0.4 seconds. We@@7	106.5	505.5	496.5	510.5##
+trained the base models for a total of 100,000 steps or 12 hours. For our big models,(described on the@@7	107.5	504.5	509.0	520.5##
+bottom line of table 3), step time was 1.0 seconds.The big models were trained for 300,000 steps@@7	106.5	505.0	518.0	529.5##
+(3.5days).@@7	106.5	150.5	530.5	542.0##
+5.3Optimizer@@7	107.5	174.5	557.0	568.5##
+We used the Adam optimizer [20] with β1 = 0.9,β2 = 0.98 and e = 10-9. We varied the learning@@7	107.5	504.5	577.5	589.0##
+
+rate over the course of training, according to the formula:@@7	107.5	337.0	589.0	600.5##
+
+lrate = dmoda min(step_num-0.5 step_num warmup_steps-1.5)@@7	159.5	452.5	616.5	635.0##
+This corresponds to increasing the learning rate linearly for the first warmup_steps training steps,@@7	106.5	505.0	642.0	653.5##
+and decreasing it thereafter proportionally to the inverse square root of the step number. We used@@7	106.5	505.5	653.5	667.5##
+
+Residual DropoutWe apply dropout [33] to the output of each sub-layer, before it is added to the@@8	106.0	504.5	272.2	283.8##
+sub-layer input and normalized. In addition, we apply dropout to the sums of the embeddings and the@@8	107.5	504.5	284.0	295.5##
+positional encodings in both the encoder and decoder stacks. For the base model, we use a rate of@@8	106.5	505.5	294.5	306.0##
+Pdrop = 0.1.@@8	106.5	160.5	304.5	318.5##
+Label Smoothing During training, we employed label smoothing of value Els = 0.1 [36]. This@@8	107.5	504.5	331.0	342.5##
+hurts perplexity, as the model learns to be more unsure, but improves accuracy and BLEU score.@@8	105.5	493.0	340.5	354.5##
+Results@@8	122.0	164.0	371.0	383.0##
+6.1MachineTranslation@@8	106.5	220.5	396.0	407.5##
+On the WMT 2014 English-to-German translation task,the big transformer model (Transformer (big)@@8	106.5	504.5	417.5	429.0##
+in Table 2) outperforms the best previously reported models (including ensembles) by more than 2.0@@8	105.5	505.5	427.5	439.0##
+BLEU, establishing a new state-of-the-art BLEU score of 28.4. The configuration of this model is@@8	106.5	505.5	438.0	452.0##
+listed in the bottom line of Table 3. Training took 3.5 days on 8 P100 GPUs.Even our base model@@8	106.5	504.5	450.5	462.0##
+surpasses all previously published models and ensembles, at a fraction of the training cost of any of@@8	105.5	506.5	460.5	474.5##
+On the WMT 2014 English-to-French translation task, our big model achieves a BLEU score of 41.0,@@8	107.5	505.5	488.5	500.0##
+outperforming all of the previously published single models, at less than 1/4 the training cost of the@@8	107.5	504.5	499.0	510.5##
+previous state-of-the-art model. The Transformer (big) model trained for English-to-French used@@8	106.5	504.5	510.5	522.0##
+For the base models, we used a single model obtained by averaging the last 5 checkpoints, which@@8	105.5	504.0	537.0	548.5##
+were written at 10-minute intervals.For the big models,we averaged the last 20 checkpoints. We@@8	107.5	505.5	548.5	560.0##
+used beam search with a beam size of 4 and length penalty Q = 0.6 [38]. These hyperparameters@@8	105.5	505.5	557.5	571.5##
+were chosen after experimentation on the development set. We set the maximum output length during@@8	106.5	506.5	569.0	583.5##
+inference to input length + 50, but terminate early when possible [38].@@8	105.5	386.5	581.0	592.5##
+Table 2 summarizes our results and compares our translation quality and training costs to other model@@8	106.5	505.5	596.5	610.5##
+architectures from the literature.We estimate the number of foating point operations used to train a@@8	107.5	504.5	609.0	620.5##
+model by multiplying the training time, the number of GPUs used, and an estimate of the sustained@@8	107.5	504.5	619.5	631.0##
+
+single-precision floating-point capacity of each GPU 5.@@8	104.5	327.5	629.5	643.5##
+6.2ModelVariations@@8	105.5	204.5	657.5	668.0##
+To evaluate the importance of different components of the Transformer, we varied our base model@@8	106.5	504.5	678.0	689.5##
+in different ways, measuring the change in performance on English-to-German translation on the@@8	105.5	505.5	688.0	702.0##
+5We used values of 2.8, 3.7,6.0 and 9.5 TFLOPS for K80,K40,M40 and P100,respectively.@@8	119.0	453.0	710.5	722.0##
+
+development set,newstest2013.Weusedbeamsearch as describedin the previous section,but no@@9	107.5	505.5	413.5	424.0##
+In Table 3 rows (A), we vary the number of attention heads and the attention key and value dimensions,@@9	105.5	504.5	439.0	450.5##
+keeping the amount of computation constant, as described in Section 3.2.2. While single-head@@9	106.5	505.5	451.5	463.0##
+ attention is O.9 BLEU worse than the best setting, quality also drops off with too many heads.@@9	105.0	481.5	460.5	474.5##
+In Table 3 rows (B),we observe that reducing the attention key size d hurts model quality. This@@9	105.5	504.0	477.5	489.0##
+suggests that determining compatibility is not easy and that a more sophisticated compatibility@@9	105.0	505.5	488.5	502.5##
+function than dot product may be beneficial. We further observe in rows (C) and (D) that, as expected,@@9	105.5	505.5	498.5	512.5##
+bigger models are better, and dropout is very helpful in avoiding over-fitting. In row (E) we replace our@@9	107.5	505.5	511.5	523.0##
+sinusoidal positional encoding with learned positional embeddings [9], and observe nearlyidentical@@9	105.5	504.5	521.5	533.0##
+
+checkpoint averaging. We present these results in Table 3.@@9	106.5	339.5	424.0	435.5##
+
+resultstothebasemodel.@@9	106.5	209.5	534.0	544.5##
+6.3English ConstituencyParsing@@9	106.5	258.0	559.5	571.0##
+To evaluate if the Transformer can generalize to other tasks we performed experiments onEnglish@@9	106.5	504.5	581.0	592.5##
+constituency parsing. This task presents specific challenges: the output is subject to strong structural@@9	107.5	504.5	592.5	604.0##
+constraints and is significantly longer than the input. Furthermore, RNN sequence-to-sequence@@9	106.5	505.5	603.0	614.5##
+models have not been able to attain state-of-the-art results in small-data regimes [37].@@9	106.5	448.0	614.0	625.5##
+We trained a 4-layer transformer with dmodel = 1024 on the Wall Street Journal (WSJ) portion of the@@9	105.0	505.5	628.0	642.0##
+Penn Treebank [25], about 40K training sentences. We also trained it in a semi-supervised setting,@@9	105.0	506.5	638.5	652.5##
+using the larger high-confidence and BerkleyParser corpora from with approximately17M sentences@@9	105.5	505.5	651.0	665.0##
+[37]. We used a vocabulary of 16K tokens for the WSJ only setting and a vocabulary of 32K tokens@@9	105.5	506.5	661.0	675.0##
+We performed only a small number of experiments to select the dropout, both attention and residual@@9	106.5	504.5	689.5	701.5##
+(section 5.4), learning rates and beam size on the Section 22 development set, all other parameters@@9	107.5	504.5	701.5	713.0##
+remained unchanged from the English-to-German base translation model. During inference, we@@9	106.5	505.5	712.0	723.5##
+
+increased the maximum output length to input length + 300. We used a beam size of 21 and α = 0.3@@10	107.5	505.5	261.5	273.0##
+Our results in Table 4 show that despite the lack of task-specific tuning our model performs sur-@@10	106.5	504.0	288.0	299.5##
+prisingly well, yielding better results than all previously reported models with the exception of the@@10	107.5	504.5	300.5	312.0##
+In contrast to RNN sequence-to-sequence models [37], the Transformer outperforms the Berkeley-@@10	106.5	504.5	326.5	338.5##
+Parser [29] even when training only on the WSJ training set of 40K sentences.@@10	107.5	420.0	338.5	350.0##
+
+for bothWSJ only and the semi-supervised setting.@@10	105.0	312.5	269.5	284.0##
+
+7Conclusion@@10	106.5	184.0	364.5	376.0##
+In this work, we presented the Transformer, the first sequence transduction model based entirely on@@10	106.5	504.5	388.5	400.0##
+attention,replacing the recurrent layers most commonly used in encoder-decoder architectures with@@10	106.5	505.5	399.5	411.0##
+For translation tasks, the Transformer can be trained significantly faster than architectures based@@10	105.5	504.0	425.5	437.0##
+on recurrent or convolutional layers.On both WMT 2014 English-to-German and WMT 2014@@10	107.5	504.5	438.0	449.5##
+English-to-French translation tasks,we achieve a new state of the art.In the former task our best@@10	107.5	505.5	449.0	459.5##
+We are excited about the future of attention-based models and plan to apply them to other tasks.We@@10	107.5	504.5	476.0	487.5##
+plan to extend the Transformer to problems involving input and output modalities other than text and@@10	107.5	504.5	486.5	498.5##
+to investigate local, restricted attention mechanisms to efficiently handle large inputs and outputs@@10	106.5	504.5	498.5	510.0##
+such as images, audio and video. Making generation less sequential is another research goals of ours.@@10	106.5	505.5	509.0	520.5##
+The code we used to train and evaluate our models is available at https://github.com/@@10	107.5	504.5	524.5	536.0##
+AcknowledgementsWe are grateful to Nal Kalchbrenner and Stephan Gouws for their fruitful@@10	107.5	504.5	558.5	570.0##
+
+model outperforms even all previouslyreported ensembles.@@10	106.5	344.0	459.5	471.0##
+
+tensorflow/tensor2tensor.@@10	107.5	236.0	536.0	548.0##
+comments, corrections and inspiration.@@10	106.5	263.0	570.0	581.0##
+References@@10	107.5	164.5	596.5	608.0##
+[1]Jimmy Lei Ba, Jamie Ryan Kiros, and Geoffrey E Hinton. Layer normalization. arXiv preprint@@10	111.5	505.5	614.5	626.0##
+[2]Dzmitry Bahdanau, Kyunghyun Cho, and Yoshua Bengio. Neural machine translation by jointly@@10	112.5	504.0	643.5	655.0##
+learning to align and translate. CoRR, abs/1409.0473, 2014.@@10	127.0	370.0	653.5	667.5##
+[3] Denny Britz, Anna Goldie, Minh-Thang Luong, and Quoc V. Le. Massive exploration of neural@@10	111.5	504.5	672.5	684.0##
+machine translation architectures. CoRR, abs/1703.03906,2017.@@10	129.0	386.5	683.0	694.5##
+[4]Jianpeng Cheng, Li Dong, and Mirella Lapata. Long short-term memory-networks for machine@@10	112.5	504.5	701.5	713.0##
+
+[5]Kyunghyun Cho, Bart van Merrienboer, Caglar Gulcehre, Fethi Bougares,Holger Schwenk@@11	112.5	504.0	75.0	86.0##
+and Yoshua Bengio. Learning phrase representations using rnn encoder-decoder for statistical@@11	127.0	505.5	84.0	98.0##
+[6]Francois Chollet.Xception:Deep learning with depthwise separable convolutions. arXiv@@11	111.5	504.5	115.5	127.0##
+[7]Junyoung Chung, Caglar Gulcehre, Kyunghyun Cho, and Yoshua Bengio. Empirical evaluation@@11	112.5	504.5	147.5	158.5##
+of gated recurrent neural networks on sequence modeling. CoRR, abs/1412.3555, 2014.@@11	129.5	479.0	158.5	170.0##
+[8] Chris Dyer, Adhiguna Kuncoro, Miguel Ballesteros, and Noah A. Smith. Recurrent neural@@11	110.5	505.5	175.5	189.5##
+[9]Jonas Gehring, Michael Auli, David Grangier, Denis Yarats, and Yann N. Dauphin. Convolu-@@11	113.0	504.5	208.5	219.5##
+tional sequence tosequence learning.arXiv preprint arXiv:1705.03122v2,2017.@@11	128.0	450.5	219.5	231.0##
+[10]Alex Graves._ Generating sequences with recurrent neural networks.arXiv preprint@@11	105.5	505.5	237.5	251.5##
+[11] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. Deep residual learning for im@@11	106.5	503.0	269.0	280.5##
+agerecognition.InProceedingsoftheIEEEConferenceonComputerVisionandPattern@@11	129.0	504.0	280.5	292.0##
+[12]Sepp Hochreiter, Yoshua Bengio, Paolo Frasconi, and Juirgen Schmidhuber. Gradient flow in@@11	106.5	504.0	311.0	322.5##
+recurrent nets: the difficulty of learninglong-term dependencies,2001.@@11	129.0	411.0	323.5	334.0##
+[13]SeppHochreiter and Juirgen Schmidhuber.Long short-term memory.Neural computation,@@11	107.5	504.5	342.5	354.0##
+[14]Zhongqiang Huang and Mary Harper. Self-training PCFG grammars with latent annotations@@11	107.5	504.0	373.0	384.5##
+acrosslanguages.InProceedingsofthe2o09ConferenceonEmpiricalMethodsinNatural@@11	130.5	504.5	383.5	395.0##
+[15]Rafal Jozefowicz, Oriol Vinyals, Mike Schuster, Noam Shazeer, and Yonghui Wu. Exploring@@11	105.5	505.5	412.5	426.5##
+the limits of language modeling. arXiv preprint arXiv: 1602.02410, 2016.@@11	128.0	421.5	425.0	439.0##
+[16] Lukasz Kaiser and Samy Bengio. Can active memory replace attention? In Advances in Neural@@11	107.5	505.5	444.5	458.5##
+[17]Lukasz Kaiser and Ilya Sutskever. Neural GPUs learn algorithms. In International Conference@@11	107.5	504.0	476.0	487.5##
+[18] Nal Kalchbrenner, Lasse Espeholt, Karen Simonyan, Aaron van den Oord, Alex Graves, and Ko-@@11	106.5	504.5	505.5	517.5##
+ray Kavukcuoglu. Neural machine translation in linear time. arXiv preprint arXiv: 1610.10099v2,@@11	128.0	505.5	517.5	531.5##
+2017.@@11	129.5	153.0	529.0	538.0##
+[19] Yoon Kim, Carl Denton, Luong Hoang, and Alexander M. Rush. Structured attention networks.@@11	106.5	504.5	548.5	560.0##
+InInternationalConferenceonLearningRepresentations,2017.@@11	129.5	386.0	560.0	571.0##
+[20]Diederik Kingma and Jimmy Ba.Adam:A method for stochastic optimization.In ICLR,2015.@@11	108.0	504.5	580.0	590.5##
+[21] Oleksi Kuchaiev and Boris Ginsburg.Factorization tricks for LSTM networks. arXiv preprint@@11	107.5	504.5	599.0	610.5##
+[22] Zhouhan Lin, Minwei Feng, Cicero Nogueira dos Santos, Mo Yu, Bing Xiang, Bowen@@11	107.5	504.0	629.5	641.0##
+Zhou, and Yoshua Bengio.A structured self-attentive sentence embedding. arXiv preprint@@11	128.0	505.0	638.5	651.5##
+[23] Minh-Thang Luong, Quoc V. Le, Ilya Sutskever, Oriol Vinyals, and Lukasz Kaiser. Multi-task@@11	108.0	504.5	671.5	683.0##
+sequence to sequence learning.arXiv preprint arXiv:1511.06114,2015.@@11	129.0	415.5	683.0	694.5##
+[24]Minh-Thang Luong, Hieu Pham, and Christopher D Manning. Effective approaches to attention-@@11	108.0	505.5	702.0	713.5##
+basedneuralmachinetranslation.arXivpreprint arXiv:1508.04025,2015.@@11	129.5	425.5	713.5	724.5##
+
+LanguageProcessing,pages 832-841.ACL,August 2009.@@11	129.5	363.5	395.0	406.5##
+
+[25]Mitchell P Marcus, Mary Ann Marcinkiewicz, and Beatrice Santorini. Building a large annotated@@12	108.0	504.5	75.0	86.5##
+corpus of english: The penn treebank. Computational linguistics, 19(2):313-330, 1993.@@12	128.0	480.0	85.0	99.0##
+[26]David McClosky, Eugene Charniak, and Mark Johnson. Effective self-training for parsing. In@@12	108.0	504.5	109.0	120.5##
+ProceedingsoftheHumanLanguageTechnologyConferenceoftheNAACL,MainConference,@@12	129.5	504.5	120.5	132.0##
+[27] Ankur Parikh, Oscar Tackstrom, Dipanjan Das, and Jakob Uszkoreit. A decomposable attention@@12	108.0	504.0	154.5	166.0##
+model.In Empirical Methods inNatural LanguageProcessing,2016.@@12	129.0	407.5	166.0	177.5##
+[28]Romain Paulus, Caiming Xiong, and Richard Socher. A deep reinforced model for abstractive@@12	108.0	504.5	189.0	200.5##
+[29] Slav Petrov, Leon Barrett, Romain Thibaux, and Dan Klein.Learning accurate, compact@@12	107.5	503.0	223.0	234.5##
+andinterpretabletreeannotation.InProceedingsofthe21stInternationalConferenceon@@12	129.5	504.0	235.0	246.5##
+ComputationalLinguisticsand44thAnnualMeetingof theACL,pages433-440.ACL,July@@12	129.5	504.0	246.0	257.5##
+2006.@@12	130.5	151.5	254.5	264.5##
+[30] Ofir Press and Lior Wolf. Using the output embedding to improve language models. arXi@@12	106.5	502.0	279.0	290.5##
+[31]Rico Sennrich, Barry Haddow, and Alexandra Birch. Neural machine translation of rare words@@12	107.5	503.0	312.5	324.0##
+with subword units.arXivpreprint arXiv:1508.07909,2015.@@12	129.5	371.0	326.0	337.5##
+[32] Noam Shazeer, Azalia Mirhoseini, Krzysztof Maziarz, Andy Davis, Quoc Le, Geoffrey Hinton@@12	108.0	504.0	348.0	359.5##
+and Jeff Dean. Outrageously large neural networks: The sparsely-gated mixture-of-experts@@12	128.0	505.0	357.0	371.0##
+
+summarization.arXiv preprint arXiv:1705.04304,2017.@@12	129.5	355.0	200.5	212.0##
+
+[33] Nitish Srivastava, Geoffrey E Hinton, Alex Krizhevsky, Ilya Sutskever, and Ruslan Salakhutdi-@@12	108.0	504.0	393.5	405.0##
+nov.Dropout: a simplewayto prevent neural networksfrom overfitting. Journal of Machine@@12	129.0	504.0	405.0	416.5##
+[34]Sainbayar Sukhbaatar, Arthur Szlam, Jason Weston, and Rob Fergus.End-to-end memory@@12	108.0	504.0	439.0	450.5##
+networks. In C. Cortes, N. D. Lawrence, D. D. Lee, M. Sugiyama, and R. Garnett, editors,@@12	129.5	504.5	450.5	462.0##
+AdvancesinNeuralInformationProcessingSystems 28,pages 2440-2448.CurranAssociates,@@12	129.0	504.5	461.0	472.5##
+Inc.,2015.@@12	128.0	172.0	473.0	484.5##
+networks.InAdvances inNeural InformationProcessingSystems,pages3104-3112,2014.@@12	129.5	493.0	506.5	518.0##
+[36]ChristianSzegedy,VincentVanhoucke,Sergey Ioffe,JonathonShlens, and ZbigniewWojna.@@12	108.0	504.5	529.5	541.0##
+Rethinking the inception architecture for computer vision. CoRR, abs/1512.00567, 2015.@@12	128.0	484.0	539.5	553.5##
+[37] Vinyals & Kaiser, Koo, Petrov, Sutskever, and Hinton. Grammar as a foreign language. In@@12	108.0	504.5	564.5	576.0##
+AdvancesinNeuralInformationProcessingSystems,2015.@@12	128.0	366.0	576.0	586.5##
+[38] Yonghui Wu, Mike Schuster, Zhifeng Chen, Quoc V Le, Mohammad Norouzi, Wolfgang@@12	108.0	504.0	598.0	609.5##
+Macherey, Maxim Krikun, Yuan Cao, Qin Gao, Klaus Macherey, et al. Google's neural machine@@12	129.5	504.0	609.5	621.0##
+translation system: Bridging the gap between human and machine translation.arXiv preprint@@12	129.0	504.5	619.5	631.0##
+
+[35]Ilya Sutskever, Oriol Vinyals, and Quoc VV Le. Sequence to sequence learning with neural@@12	108.0	504.5	495.0	506.5##
+
+[39] Jie Zhou, Ying Cao, Xuguang Wang, Peng Li, and Wei Xu. Deep recurrent models with@@12	108.0	504.5	654.0	666.0##
+fast-forward connections for neural machine translation.CoRR,abs/1606.04199,2016.@@12	129.5	476.5	666.0	676.5##
+[40] Muhua Zhu, Yue Zhang, Wenliang Chen, Min Zhang, and Jingbo Zhu. Fast and accurate@@12	108.0	504.0	689.0	700.5##
+shift-reduceconstituentparsing.InProceedingsofthe51stAnnualMeetingoftheACL(Volume@@12	129.5	504.0	700.5	711.0##
+
+I:LongPapers),pages 434443.ACL,August2013.@@12	129.5	341.0	712.0	722.5##
+
+=== 表格/图块数量 === 4

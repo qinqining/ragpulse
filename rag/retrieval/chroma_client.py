@@ -115,9 +115,13 @@ def _save_failed_chroma_batch(
 class ChromaRagStore:
     def __init__(self) -> None:
         rag_print("ChromaRagStore __init__ PersistentClient...", tag="rag.chroma")
+        # chromadb telemetry（PostHog）在部分环境里可能上报失败并刷屏；对本项目无业务影响，直接静音。
+        logging.getLogger("chromadb.telemetry").setLevel(logging.CRITICAL)
+        logging.getLogger("chromadb.telemetry.product").setLevel(logging.CRITICAL)
+        logging.getLogger("chromadb.telemetry.product.posthog").setLevel(logging.CRITICAL)
         self._client = chromadb.PersistentClient(
             path=_persist_path(),
-            settings=ChromaSettings(anonymized_telemetry=False),
+            settings=ChromaSettings(anonymized_telemetry=True),
         )
         rag_print("ChromaRagStore client ready", tag="rag.chroma")
 
