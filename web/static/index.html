@@ -1,499 +1,1162 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ragpulse — 入库与检索</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ragpulse</title>
   <style>
-    :root { --bg: #0f1419; --card: #1a2332; --text: #e7ecf3; --muted: #8b9bb4; --accent: #3d8bfd; --ok: #3fb950; --warn: #d29922; }
-    * { box-sizing: border-box; }
-    body { font-family: ui-sans-serif, system-ui, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 1.5rem; line-height: 1.5; }
-    h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.5rem; }
-    h2 { font-size: 1rem; margin: 0 0 0.75rem; }
-    p.note { color: var(--muted); font-size: 0.875rem; margin: 0 0 1.25rem; }
-    .card { background: var(--card); border-radius: 10px; padding: 1.25rem; max-width: 920px; margin-bottom: 1rem; border: 1px solid #2d3a4d; }
-    label { display: block; font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
-    input, textarea, button, select { width: 100%; padding: 0.6rem 0.75rem; border-radius: 8px; border: 1px solid #3d4f66; background: #0d1117; color: var(--text); font-size: 0.9rem; }
-    textarea { min-height: 72px; resize: vertical; font-family: inherit; }
-    .row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem; }
-    @media (max-width: 900px) { .row { grid-template-columns: 1fr; } }
-    button { background: var(--accent); border: none; font-weight: 600; cursor: pointer; margin-top: 0.5rem; }
-    button.secondary { background: #388bfd44; border: 1px solid var(--accent); }
-    button:hover { filter: brightness(1.08); }
-    button:disabled { opacity: 0.5; cursor: not-allowed; }
-    pre { background: #0d1117; padding: 1rem; border-radius: 8px; overflow: auto; font-size: 0.8rem; border: 1px solid #2d3a4d; white-space: pre-wrap; word-break: break-word; }
-    .status { font-size: 0.8rem; margin-top: 0.5rem; }
-    .status.ok { color: var(--ok); }
-    .status.warn { color: var(--warn); }
-    .hit { border-left: 3px solid var(--accent); padding-left: 0.75rem; margin: 0.75rem 0; }
-    .hit .meta { font-size: 0.75rem; color: var(--muted); }
-    a { color: var(--accent); }
-    input[type="file"] { padding: 0.4rem; }
-    .checks label { display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem; margin-top: 0.5rem; }
-    .checks input { width: auto; }
-    .llm-opt { margin: 0.75rem 0; padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid #3d4f66; background: #0d1117; }
-    .llm-opt label { display: flex; align-items: flex-start; gap: 0.6rem; font-size: 0.9rem; color: var(--text); margin: 0; cursor: pointer; }
-    .llm-opt input { width: auto; margin-top: 0.2rem; flex-shrink: 0; }
-    .llm-opt .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.35rem; line-height: 1.4; }
-    .answer-box { background: #0d1117; border: 1px solid #238636; border-radius: 8px; padding: 1rem; margin-top: 0.75rem; font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; }
-    .answer-box .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; }
-    .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; align-items: start; }
-    .right-col { position: sticky; top: 1.5rem; }
-    @media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } .right-col { position: static; } }
+    /* ═══════════════════════════════════════════════════════════
+       DESIGN TOKENS — 克制留白高级感
+       暖白底 · 深灰文字 · 冷灰蓝强调 · 极少阴影
+    ═══════════════════════════════════════════════════════════ */
+    :root {
+      --bg:           #F8F7F4;
+      --surface:      #FFFFFF;
+      --surface-alt:  #F2F1EE;
+      --border:       #E2E0DB;
+      --text:         #1C1B18;
+      --text-2:       #6B6966;
+      --text-3:       #A8A59E;
+      --accent:       #5B7F8E;
+      --accent-hover: #4A6B79;
+      --accent-bg:    #EDF3F5;
+      --user-bubble:  #5B7F8E;
+      --user-text:    #FFFFFF;
+      --assist-bg:    #F0EFEC;
+      --assist-text:  #1C1B18;
+      --danger:       #C0392B;
+      --danger-bg:    #FDECEA;
+      --ok:           #4A7C59;
+      --radius:       10px;
+      --radius-sm:    6px;
+      --topbar-h:     52px;
+      --sidebar-w:    248px;
+      --font:         system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: var(--font); font-size: 14px; line-height: 1.5; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
+    button { font: inherit; cursor: pointer; border: none; background: none; }
+    input, textarea, select { font: inherit; }
+    ul, ol { list-style: none; }
+    a { color: inherit; text-decoration: none; }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+    ::selection { background: rgba(91,127,142,0.2); }
+
+    /* ═══════════════════════════════════════════════════════════
+       LAYOUT
+    ═══════════════════════════════════════════════════════════ */
+    #root { height: 100%; display: flex; flex-direction: column; }
+
+    /* TOPBAR */
+    .topbar {
+      height: var(--topbar-h);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0 1.25rem;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    .topbar-logo {
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: -0.025em;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+    .topbar-logo span { color: var(--accent); }
+    .topbar-sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+    .topbar-fields { display: flex; align-items: center; gap: 0.5rem; }
+    .topbar-fields label { font-size: 0.6875rem; color: var(--text-3); flex-shrink: 0; }
+    .topbar-fields input, .topbar-fields select {
+      border: 1px solid var(--border);
+      background: var(--bg);
+      border-radius: var(--radius-sm);
+      padding: 0.25rem 0.5rem;
+      font-size: 0.8125rem;
+      color: var(--text);
+      height: 28px;
+      width: auto;
+    }
+    .topbar-fields input:focus, .topbar-fields select:focus { border-color: var(--accent); outline: none; }
+    .topbar-right { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
+    .topbar-status { font-size: 0.75rem; color: var(--text-3); display: flex; align-items: center; gap: 0.375rem; }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); transition: background 0.4s; }
+    .status-dot.ok { background: var(--ok); }
+    .topbar-new-session {
+      display: flex; align-items: center; gap: 0.375rem;
+      padding: 0.3rem 0.75rem;
+      border-radius: var(--radius-sm);
+      font-size: 0.8125rem;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      transition: background 0.15s, color 0.15s;
+    }
+    .topbar-new-session:hover { background: var(--accent-bg); }
+    .agent-mode-toggle {
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .mode-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.25rem 0.5rem;
+      font-size: 0.75rem;
+      color: var(--text-2);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+    }
+    .mode-btn + .mode-btn { border-left: 1px solid var(--border); }
+    .mode-btn:hover { background: var(--bg); }
+    .mode-btn.active {
+      background: var(--accent-bg);
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    /* MAIN LAYOUT */
+    .layout { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+    /* SIDEBAR */
+    .sidebar {
+      width: var(--sidebar-w);
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Sidebar — upload zone */
+    .sidebar-upload {
+      padding: 0.875rem 1rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .sidebar-section-title {
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-3);
+      margin-bottom: 0.5rem;
+    }
+    .upload-zone {
+      border: 1.5px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 0.875rem 0.75rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .upload-zone:hover, .upload-zone.drag-over {
+      border-color: var(--accent);
+      background: var(--accent-bg);
+    }
+    .upload-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    }
+    .upload-zone-icon { font-size: 1.125rem; margin-bottom: 0.25rem; color: var(--text-3); }
+    .upload-zone:hover .upload-zone-icon, .upload-zone.drag-over .upload-zone-icon { color: var(--accent); }
+    .upload-zone-text { font-size: 0.8125rem; color: var(--text-2); }
+    .parser-select {
+      width: 100%;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      border-radius: var(--radius-sm);
+      padding: 0.25rem 0.375rem;
+      font-size: 0.75rem;
+      color: var(--text);
+      margin-bottom: 0.375rem;
+      cursor: pointer;
+    }
+    .parser-select:focus { border-color: var(--accent); outline: none; }
+    .upload-zone-text strong { color: var(--accent); font-weight: 500; }
+    .upload-zone-hint { font-size: 0.6875rem; color: var(--text-3); margin-top: 0.125rem; }
+
+    /* Sidebar — file list */
+    .sidebar-files { flex: 1; overflow-y: auto; min-height: 0; }
+    .file-list { padding: 0.375rem 0; }
+    .file-item {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      cursor: default;
+      transition: background 0.15s;
+      position: relative;
+    }
+    .file-item:hover { background: var(--bg); }
+    .file-item.in-context { background: var(--accent-bg); }
+    .file-icon { font-size: 0.875rem; flex-shrink: 0; color: var(--accent); }
+    .file-info { flex: 1; min-width: 0; }
+    .file-name { font-size: 0.8125rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .file-meta { font-size: 0.6875rem; color: var(--text-3); margin-top: 0.0625rem; }
+    .file-badge {
+      font-size: 0.625rem; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+      background: var(--surface-alt); color: var(--text-3); border-radius: 3px; padding: 1px 4px; flex-shrink: 0;
+    }
+    .file-badge.pdf { background: #FEF3E2; color: #9A6B1A; }
+    .file-badge.inctx { background: var(--accent-bg); color: var(--accent); }
+    .file-remove {
+      opacity: 0; font-size: 0.75rem; color: var(--text-3);
+      padding: 0.125rem 0.25rem; border-radius: 4px;
+      transition: opacity 0.15s, color 0.15s, background 0.15s; flex-shrink: 0;
+    }
+    .file-item:hover .file-remove { opacity: 1; }
+    .file-remove:hover { color: var(--danger); background: var(--danger-bg); }
+    .file-list-empty { padding: 1.25rem 1rem; text-align: center; font-size: 0.8125rem; color: var(--text-3); }
+
+    /* Sidebar — KB list */
+    .sidebar-kb {
+      border-top: 1px solid var(--border);
+      padding: 0.75rem 1rem;
+      flex-shrink: 0;
+    }
+    .kb-list { display: flex; flex-direction: column; gap: 0.3125rem; }
+    .kb-item { display: flex; align-items: center; gap: 0.5rem; font-size: 0.8125rem; color: var(--text-2); }
+    .kb-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
+    .kb-item-dept { font-size: 0.6875rem; color: var(--text-3); margin-left: auto; }
+
+    /* KB accordion */
+    .kb-dept-group { margin-bottom: 0.25rem; }
+    .kb-dept-header {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      padding: 0.25rem 0.375rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.8125rem;
+      color: var(--text);
+      transition: background 0.15s;
+    }
+    .kb-dept-header:hover { background: var(--bg); }
+    .kb-dept-arrow { flex-shrink: 0; color: var(--text-3); transition: transform 0.2s; }
+    .kb-dept-label { flex: 1; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .kb-dept-count {
+      font-size: 0.625rem;
+      background: var(--surface-alt);
+      color: var(--text-3);
+      border-radius: 99px;
+      padding: 1px 5px;
+      flex-shrink: 0;
+    }
+    .kb-dept-items { padding-left: 1rem; margin-top: 0.125rem; }
+    .kb-coll-item {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.1875rem 0.375rem;
+      font-size: 0.75rem;
+      color: var(--text-2);
+      border-radius: var(--radius-sm);
+    }
+    .kb-coll-item:hover { background: var(--bg); color: var(--text); }
+    .kb-coll-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .kb-coll-kind { font-size: 0.625rem; color: var(--text-3); flex-shrink: 0; }
+    .kb-action-btn {
+      opacity: 0;
+      font-size: 0.6875rem;
+      color: var(--text-3);
+      padding: 1px 3px;
+      border-radius: 3px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: opacity 0.15s, color 0.15s;
+    }
+    .kb-coll-item:hover .kb-action-btn { opacity: 1; }
+    .kb-action-btn:hover { color: var(--text); background: var(--surface-alt); }
+    .kb-action-btn.danger:hover { color: var(--danger); background: var(--danger-bg); }
+
+    /* Sidebar — session selector */
+    .sidebar-session {
+      border-top: 1px solid var(--border);
+      padding: 0.75rem 1rem;
+      flex-shrink: 0;
+    }
+    .session-select {
+      width: 100%; border: 1px solid var(--border); background: var(--bg);
+      border-radius: var(--radius-sm); padding: 0.25rem 0.5rem;
+      font-size: 0.8125rem; color: var(--text); height: 28px;
+    }
+    .session-select:focus { border-color: var(--accent); outline: none; }
+    .session-actions { display: flex; gap: 0.375rem; margin-top: 0.5rem; }
+    .session-btn {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.375rem;
+      padding: 0.3rem 0.5rem; border-radius: var(--radius-sm);
+      font-size: 0.75rem; color: var(--text-2);
+      border: 1px solid var(--border);
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .session-btn:hover { background: var(--bg); color: var(--text); }
+    .session-btn.danger:hover { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
+
+    /* ═══════════════════════════════════════════════════════════
+       CHAT AREA
+    ═══════════════════════════════════════════════════════════ */
+    .chat-area {
+      flex: 1; min-width: 0;
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Messages */
+    .chat-messages {
+      flex: 1; overflow-y: auto;
+      padding: 1.5rem 2rem 1rem;
+      display: flex; flex-direction: column; gap: 1.25rem;
+    }
+
+    /* Empty state */
+    .empty-state {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 0.75rem; color: var(--text-3); text-align: center; padding: 2rem;
+      animation: fadeUp 0.4s ease;
+    }
+    .empty-state-icon { font-size: 2.5rem; opacity: 0.35; }
+    .empty-state h2 { font-size: 1rem; font-weight: 500; color: var(--text-2); }
+    .empty-state p { font-size: 0.8125rem; max-width: 30ch; line-height: 1.65; }
+
+    /* Message bubbles */
+    .msg { display: flex; gap: 0.625rem; animation: fadeUp 0.22s ease; max-width: 76ch; }
+    .msg.user { align-self: flex-end; flex-direction: row-reverse; }
+    .msg.assistant { align-self: flex-start; }
+
+    .msg-avatar {
+      width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.6875rem; font-weight: 600;
+      flex-shrink: 0; margin-top: 2px;
+    }
+    .msg.user .msg-avatar { background: var(--accent); color: #fff; }
+    .msg.assistant .msg-avatar { background: var(--surface-alt); color: var(--text-2); border: 1px solid var(--border); }
+
+    .msg-body { min-width: 0; }
+    .msg.user .msg-body { text-align: right; }
+
+    .msg-content {
+      padding: 0.625rem 0.875rem;
+      border-radius: var(--radius);
+      font-size: 0.875rem; line-height: 1.65;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .msg.user .msg-content { background: var(--user-bubble); color: var(--user-text); border-bottom-right-radius: 3px; }
+    .msg.assistant .msg-content { background: var(--assist-bg); color: var(--assist-text); border-bottom-left-radius: 3px; }
+
+    .msg-time { font-size: 0.6875rem; color: var(--text-3); margin-top: 0.25rem; }
+
+    /* RAG ref chips */
+    .msg-refs { display: flex; flex-wrap: wrap; gap: 0.3125rem; margin-top: 0.5rem; justify-content: flex-end; }
+    .msg-refs .chip {
+      font-size: 0.6875rem;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 99px; padding: 2px 8px;
+      color: var(--text-2);
+      max-width: 26ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* Loading dots */
+    .msg.loading .msg-content { display: flex; align-items: center; gap: 0.5rem; color: var(--text-3); }
+    .loading-dots { display: flex; gap: 3px; }
+    .loading-dots span { width: 4px; height: 4px; border-radius: 50%; background: var(--text-3); animation: dotPulse 1.2s ease infinite; }
+    .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+    /* ═══════════════════════════════════════════════════════════
+       INPUT AREA
+    ═══════════════════════════════════════════════════════════ */
+    .chat-input-area {
+      padding: 0.75rem 1.5rem 1rem;
+      background: var(--bg);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .chat-input-wrap {
+      display: flex; align-items: flex-end; gap: 0.625rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 0.5rem 0.625rem 0.5rem 0.875rem;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .chat-input-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,127,142,0.1); }
+    .chat-input {
+      flex: 1; border: none; background: transparent; resize: none;
+      font-size: 0.875rem; line-height: 1.5; color: var(--text);
+      min-height: 24px; max-height: 120px; overflow-y: auto; padding: 2px 0;
+    }
+    .chat-input::placeholder { color: var(--text-3); }
+    .chat-input:focus { outline: none; }
+    .send-btn {
+      width: 32px; height: 32px; border-radius: var(--radius-sm);
+      background: var(--accent); color: #fff;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .send-btn:hover:not(:disabled) { background: var(--accent-hover); }
+    .send-btn:active:not(:disabled) { transform: scale(0.94); }
+    .send-btn:disabled { background: var(--border); color: var(--text-3); cursor: not-allowed; }
+    .input-hint { font-size: 0.6875rem; color: var(--text-3); margin-top: 0.375rem; display: flex; align-items: center; gap: 0.375rem; }
+    .input-hint .kbd { background: var(--surface); border: 1px solid var(--border); border-radius: 3px; padding: 0 3px; font-size: 0.625rem; }
+
+    /* ═══════════════════════════════════════════════════════════
+       TOAST
+    ═══════════════════════════════════════════════════════════ */
+    .toast {
+      position: fixed; bottom: 1.5rem; left: 50%;
+      transform: translateX(-50%);
+      background: var(--text); color: #fff;
+      padding: 0.5rem 1rem; border-radius: 99px;
+      font-size: 0.8125rem; z-index: 100;
+      display: flex; align-items: center; gap: 0.5rem;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+      animation: toastIn 0.3s ease;
+      transition: opacity 0.3s, transform 0.3s;
+    }
+    .toast.ok { background: var(--ok); }
+    .toast.err { background: var(--danger); }
+    .toast.hidden { opacity: 0; transform: translateX(-50%) translateY(8px); pointer-events: none; }
+
+    /* ═══════════════════════════════════════════════════════════
+       ANIMATIONS
+    ═══════════════════════════════════════════════════════════ */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes dotPulse {
+      0%, 100% { opacity: 0.35; transform: scale(0.8); }
+      50%       { opacity: 1; transform: scale(1); }
+    }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateX(-50%) translateY(12px); }
+      to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+    }
+
+    /* ═══════════════════════════════════════════════════════════
+       RESPONSIVE
+    ═══════════════════════════════════════════════════════════ */
+    @media (max-width: 900px) {
+      :root { --sidebar-w: 200px; }
+      .topbar-fields label { display: none; }
+    }
+    @media (max-width: 640px) {
+      .sidebar { display: none; }
+      .chat-messages { padding: 1rem; }
+      .chat-input-area { padding: 0.625rem 0.75rem 0.75rem; }
+    }
   </style>
 </head>
 <body>
-  <h1>ragpulse — 入库与检索</h1>
-  <p class="note">
-    入库 <code>POST /rag/ingest</code>、检索 <code>POST /rag/retrieve</code>、<strong>整条 RAG+回答</strong> <code>POST /rag/qa</code> 须使用同一 <strong>dept / kb</strong>。
-    PDF 默认 deepdoc；多模态 LLM 需配置 <code>RAG_PUBLIC_BASE_URL</code> + <code>LLM_VISION_MODEL</code>，见 <a href="/docs" target="_blank">/docs</a> 与仓库 <code>docs/integrations.md</code>。
-  </p>
-  <div class="layout">
-    <div class="left-col">
-  <div class="card">
-    <h2>① 上传文件入库</h2>
-    <form id="ingest">
-      <label for="file">文件</label>
-      <input id="file" name="file" type="file" required />
-      <div class="row">
-        <div>
-          <label for="iparser">解析方式</label>
-          <select id="iparser" name="parser"></select>
-        </div>
-        <div>
-          <label for="idept">RAG_DEPT</label>
-          <input id="idept" name="dept_tag" type="text" value="test_rag" />
-        </div>
-        <div>
-          <label for="ikb">RAG_KB_ID</label>
-          <input id="ikb" name="kb_id" type="text" value="attention" />
-        </div>
-      </div>
-      <div class="row">
-        <div></div>
-        <div>
-          <label for="idocType" title="仅 PDF 生效；默认自动识别 paper/book/laws/one">PDF 内容类型</label>
-          <select id="idocType" name="pdf_doc_type">
-            <option value="auto" selected>自动识别（推荐）</option>
-            <option value="paper">学术论文（paper）</option>
-            <option value="laws">法规 / 问答（laws）</option>
-            <option value="book">书籍 / 章节型（book）</option>
-            <option value="one">通用文档（one）</option>
-          </select>
-        </div>
-      </div>
-      <div class="llm-opt">
-        <label for="ipresum">
-          <input type="checkbox" id="ipresum" name="llm_chunk_summary" />
-          <span>
-            <strong>LLM 增强摘要</strong>（可选：入库前逐 chunk 调 LLM；<strong>向量用摘要</strong>，库内仍存原文；<code>/rag/qa</code> 会拼摘要+正文）
-          </span>
-        </label>
-        <p class="hint">
-          默认不勾选。勾选后 chunk 多时可能极慢；可用 <code>RAG_LLM_PRE_SUMMARY_MAX_CHUNKS</code>、<code>RAG_LLM_PRE_SUMMARY_MAX_CHUNK_CHARS</code>、<code>LLM_SUMMARY_MODEL</code> 控制。
-        </p>
-      </div>
-      <div class="row">
-        <div class="checks" style="grid-column: span 3;">
-          <label><input type="checkbox" id="ireplace" checked /> 入库前删除同名 collection（推荐）</label>
-          <label><input type="checkbox" id="iasync" checked /> 异步入库（推荐，返回 task_id 后轮询进度，不会长时间卡住页面）</label>
-          <label><input type="checkbox" id="iprechunk" checked title="调用嵌入 API 之前落盘，无向量" /> 导出「分块预览」JSON（嵌入前，纯文本+元数据）</label>
-          <label><input type="checkbox" id="iexport" checked title="已算完向量、写入 Chroma 之前；含 embedding_dim" /> 写入 ingest manifest（含向量维度）</label>
-          <label><input type="checkbox" id="ipdfimg" checked title="PDF 内嵌图 → web/static/images，metadata.image_uri 为相对路径 JSON 列表" /> PDF 提取内嵌图并写入 metadata</label>
-        </div>
-      </div>
-      <p class="note" style="margin-top:0.75rem">
-        <strong>长文 PDF 说明：</strong>选「仅 deepdoc」时，几十页论文可能需 <strong>10～30 分钟+</strong>（版面/OCR + 每块文本单独调嵌入 API）。
-        终端在请求<strong>结束</strong>前往往<strong>不会出现</strong> <code>POST /rag/ingest</code> 日志，属正常现象。可先试「PDF（deepdoc 失败再 pypdf）」或「仅 pypdf」验证链路。
-      </p>
-      <button type="submit" id="ibtn">开始入库（会调嵌入 API，请稍候）</button>
-    </form>
-    <div id="istatus" class="status"></div>
-    <pre id="iraw" style="margin-top:1rem">{}</pre>
-  </div>
+<div id="root">
 
-  <div class="card">
-    <h2>② 仅检索（无 LLM）</h2>
-    <form id="f">
-      <label for="q">问题</label>
-      <textarea id="q" required placeholder="例如：What is scaled dot-product attention?">What is the Transformer and scaled dot-product attention?</textarea>
-      <div class="row">
-        <div>
-          <label for="topk">top_k</label>
-          <input id="topk" type="number" min="1" max="50" value="5" />
-        </div>
-        <div>
-          <label for="dept">RAG_DEPT（须与入库一致）</label>
-          <input id="dept" type="text" value="test_rag" />
-        </div>
-        <div>
-          <label for="kb">RAG_KB_ID</label>
-          <input id="kb" type="text" value="attention" />
-        </div>
-      </div>
-      <div class="row">
-        <div style="grid-column: span 3;">
-          <label for="kbsel">已入库知识库（自动填充 dept / kb）</label>
-          <select id="kbsel">
-            <option value="">（从当前输入使用）</option>
-          </select>
-        </div>
-      </div>
-      <label><input type="checkbox" id="export" /> 检索结果写入 data/rag_exports（与入库 JSON 无关；不勾则只返回 JSON 不落盘）</label>
-      <button type="submit" id="btn">检索</button>
-    </form>
-    <div id="status" class="status"></div>
-  </div>
-
-  <div class="card">
-    <h2>③ RAG 问答（检索 + LLM 回答）</h2>
-    <p class="note">与 ② 共用下方「命中列表」展示；此处生成 <code>answer</code>。勾选「多模态」时会把命中图片的<strong>公网 URL</strong>发给视觉模型（需服务器配置 <code>RAG_PUBLIC_BASE_URL</code>）。</p>
-    <form id="qa">
-      <label for="qq">问题（可与 ② 相同）</label>
-      <textarea id="qq" required placeholder="例如：文档里这张图说明什么？"></textarea>
-      <div class="row">
-        <div>
-          <label for="qtopk">top_k</label>
-          <input id="qtopk" type="number" min="1" max="50" value="5" />
-        </div>
-        <div class="checks" style="align-self: end;">
-          <label><input type="checkbox" id="qvision" /> 多模态（use_vision，需公网 BASE_URL）</label>
-        </div>
-        <div></div>
-      </div>
-      <button type="submit" id="qbtn">生成回答</button>
-    </form>
-    <div id="qstatus" class="status"></div>
-    <div id="qanswer" class="answer-box" style="display:none;"></div>
-  </div>
-  </div>
-    <div class="right-col">
-  <div class="card">
-    <h2>命中列表（② 或 ③ 最后一次结果）</h2>
-    <div id="hits"></div>
-    <h2 style="margin-top:1rem">检索 JSON</h2>
-    <pre id="raw">{}</pre>
-  </div>
+  <!-- ══ TOPBAR ══════════════════════════════════════════════ -->
+  <header class="topbar">
+    <div class="topbar-logo">rag<span>pulse</span></div>
+    <div class="topbar-sep"></div>
+    <div class="topbar-fields">
+      <label for="t-dept">RAG_DEPT</label>
+      <input id="t-dept" type="text" value="test_rag" style="width:110px">
+      <label for="t-kb" style="margin-left:0.5rem">RAG_KB_ID</label>
+      <input id="t-kb" type="text" value="attention" style="width:110px">
     </div>
-  </div>
+    <div class="topbar-right">
+      <div class="topbar-status">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">connecting</span>
+      </div>
+      <div class="agent-mode-toggle" id="agent-mode-toggle">
+        <button class="mode-btn active" id="btn-mode-text" title="文本回答">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 3h8M2 6h6M2 9h8"/></svg>
+          文本
+        </button>
+        <button class="mode-btn" id="btn-mode-vision" title="多模态（召回图片）">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="10" height="8" rx="1"/><circle cx="4" cy="5" r="1"/><path d="M1 8l3-3 2 2 3-3 2 2"/></svg>
+          多模态
+        </button>
+      </div>
+      <button class="topbar-new-session" id="btn-new-session" title="新建会话">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 1v10M1 6h10"/></svg>
+        新会话
+      </button>
+    </div>
+  </header>
 
-  <p class="note">
-    <a href="/docs" target="_blank">/docs</a> · <a href="/health">/health</a>
-  </p>
+  <!-- ══ MAIN LAYOUT ══════════════════════════════════════════ -->
+  <div class="layout">
 
-  <script>
-    const base = "";
+    <!-- LEFT SIDEBAR -->
+    <aside class="sidebar">
 
-    async function loadParsers() {
-      const sel = document.getElementById("iparser");
-      try {
-        const r = await fetch(base + "/rag/ingest/options");
-        const d = await r.json();
-        sel.innerHTML = (d.parsers || []).map(p =>
-          `<option value="${escapeAttr(p.value)}">${escapeHtml(p.label)}</option>`
-        ).join("");
-      } catch (e) {
-        sel.innerHTML = '<option value="auto">自动</option><option value="pdf">pdf</option><option value="txt">txt</option><option value="md">md</option><option value="docx">docx</option>';
-      }
+      <!-- Upload -->
+      <div class="sidebar-upload">
+        <div class="sidebar-section-title">上传文件</div>
+        <select class="parser-select" id="parser-select" title="选择解析器">
+          <option value="auto">自动（推荐）</option>
+          <option value="pdf">PDF（deepdoc 优先）</option>
+          <option value="pdf_deepdoc">PDF 仅 deepdoc</option>
+          <option value="pdf_pypdf">PDF 仅 pypdf</option>
+          <option value="txt">纯文本 .txt</option>
+          <option value="md">Markdown .md</option>
+          <option value="docx">Word .docx</option>
+        </select>
+        <div class="upload-zone" id="upload-zone">
+          <input type="file" id="file-input" accept=".pdf,.txt,.md,.docx" multiple>
+          <div class="upload-zone-icon">↑</div>
+          <div class="upload-zone-text"><strong>点击选择</strong> 或拖拽文件</div>
+          <div class="upload-zone-hint">PDF · TXT · MD · DOCX</div>
+        </div>
+      </div>
+
+      <!-- File list -->
+      <div class="sidebar-files">
+        <div class="file-list" id="file-list">
+          <div class="file-list-empty">暂无已上传文件</div>
+        </div>
+      </div>
+
+      <!-- KB list -->
+      <div class="sidebar-kb">
+        <div class="sidebar-section-title">已入库知识库</div>
+        <div class="kb-list" id="kb-list">
+          <div class="kb-item" style="font-size:0.8125rem;color:var(--text-3)">加载中…</div>
+        </div>
+      </div>
+
+      <!-- Session -->
+      <div class="sidebar-session">
+        <div class="sidebar-section-title">当前会话</div>
+        <select class="session-select" id="session-select">
+          <option value="">— 新建会话 —</option>
+        </select>
+        <div class="session-actions">
+          <button class="session-btn danger" id="btn-clear-session" title="清空当前会话记忆">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M1 3h10M4 3V2h4v1M2 3l.7 7.3A1 1 0 005.7 11h.6a1 1 0 001-.7L10 3"/></svg>
+            清空
+          </button>
+          <button class="session-btn" id="btn-list-sessions" title="查看所有会话">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="10" height="8" rx="1"/><path d="M4 5h4M4 7.5h2"/></svg>
+            会话列表
+          </button>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- CHAT AREA -->
+    <main class="chat-area">
+      <div class="chat-messages" id="chat-messages">
+        <div class="empty-state" id="empty-state">
+          <div class="empty-state-icon">⌨</div>
+          <h2>开始对话</h2>
+          <p>上传文件后，自动以文件内容为上下文进行 RAG 检索与回答。</p>
+        </div>
+      </div>
+
+      <!-- Input -->
+      <div class="chat-input-area">
+        <div class="chat-input-wrap">
+          <textarea
+            class="chat-input"
+            id="chat-input"
+            rows="1"
+            placeholder="输入问题，按 Enter 发送…"
+            autofocus
+          ></textarea>
+          <button class="send-btn" id="send-btn" title="发送 (Enter)">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="white" stroke-width="1.5"><path d="M1 7h12M8 3l5 4-5 4"/></svg>
+          </button>
+        </div>
+        <div class="input-hint">
+          <span class="kbd">Enter</span> 发送
+          <span style="margin-left:0.5rem"><span class="kbd">Shift+Enter</span> 换行</span>
+        </div>
+      </div>
+    </main>
+
+  </div><!-- /layout -->
+
+</div><!-- /root -->
+
+<!-- TOAST -->
+<div class="toast hidden" id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   API — 对接现有后端接口（无变化契约）
+═══════════════════════════════════════════════════════════════ */
+const API = {
+  base: '',
+
+  health() { return fetch(this.base + '/health').then(r => r.json()); },
+
+  // ── 文件入库 ──
+  ingest(formData) { return fetch(this.base + '/rag/ingest/async', { method: 'POST', body: formData }); },
+  ingestStatus(taskId) { return fetch(this.base + `/rag/ingest/tasks/${encodeURIComponent(taskId)}`).then(r => r.json()); },
+  ingestOptions() { return fetch(this.base + '/rag/ingest/options').then(r => r.json()); },
+
+  // ── 知识库列表 ──
+  listKbs() { return fetch(this.base + '/rag/kbs').then(r => r.json()); },
+
+  // ── 删除 collection ──
+  deleteCollection(deptTag, kbId) {
+    return fetch(`${this.base}/rag/kbs/${encodeURIComponent(deptTag)}/${encodeURIComponent(kbId)}`, { method: 'DELETE' })
+      .then(r => r.json().catch(() => ({ ok: false })));
+  },
+
+  // ── Agent 对话 ──
+  async chat(payload) {
+    const r = await fetch(this.base + '/agent/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const detail = data.detail != null
+        ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail))
+        : (data.message || r.statusText || 'HTTP ' + r.status);
+      throw new Error(detail);
     }
-    loadParsers();
+    return data;
+  },
 
-    async function ping() {
-      try {
-        const r = await fetch(base + "/health");
-        const j = await r.json();
-        document.getElementById("status").textContent = "服务: " + (j.status || "ok");
-        document.getElementById("status").classList.add("ok");
-      } catch (e) {
-        document.getElementById("status").textContent = "无法连接 API";
-      }
+  // ── RAG QA (多模态) ──
+  async qa(payload) {
+    const r = await fetch(this.base + '/rag/qa', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const detail = data.detail != null
+        ? (typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail))
+        : (data.message || r.statusText || 'HTTP ' + r.status);
+      throw new Error(detail);
     }
-    ping();
+    return data;
+  },
 
-    async function loadKbList() {
-      const sel = document.getElementById("kbsel");
-      if (!sel) return;
-      const deptInput = document.getElementById("dept");
-      const kbInput = document.getElementById("kb");
-      const ideptInput = document.getElementById("idept");
-      const ikbInput = document.getElementById("ikb");
+  // ── 会话管理 ──
+  listSessions(memoryId, userId) {
+    return fetch(this.base + `/agent/sessions/list?memory_id=${encodeURIComponent(memoryId)}&user_id=${encodeURIComponent(userId || 'default')}`)
+      .then(r => r.json());
+  },
+  clearMemory(memoryId, sessionId, userId) {
+    return fetch(this.base + '/agent/memory/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memory_id: memoryId, session_id: sessionId, user_id: userId || 'default' })
+    }).then(r => r.json());
+  }
+};
 
-      try {
-        const r = await fetch(base + "/rag/kbs");
-        const d = await r.json();
-        const cols = d.collections || [];
-        sel.innerHTML = '<option value="">（从当前输入使用）</option>' + cols.map(c =>
-          `<option value="${escapeAttr(c.collection_name)}" data-dept="${escapeAttr(c.dept_tag)}" data-kb="${escapeAttr(c.kb_id)}">${escapeHtml(c.dept_tag)} / ${escapeHtml(c.kb_id)}</option>`
-        ).join("");
+/* ═══════════════════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════════════════ */
+const state = {
+  sessionId: generateId('sess_'),
+  memoryId: 'default',
+  userId: 'default',
+  agentMode: 'text',  // 'text' | 'multimodal'
+  files: [],         // { id, name, size, type, inContext, taskId }
+  kbCollections: [], // from /rag/kbs
+  messages: [],     // { id, role, content, time, refs, loading }
+};
 
-        const curDept = (deptInput.value || "").trim();
-        const curKb = (kbInput.value || "").trim();
-        for (let i = 0; i < sel.options.length; i++) {
-          const opt = sel.options[i];
-          if (opt.dataset && opt.dataset.dept === curDept && opt.dataset.kb === curKb) {
-            sel.selectedIndex = i;
-            break;
-          }
-        }
+/* ═══════════════════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════════════════ */
+function generateId(prefix) {
+  return prefix + Math.random().toString(36).slice(2, 10);
+}
 
-        sel.onchange = () => {
-          const opt = sel.options[sel.selectedIndex];
-          const dept = opt.dataset.dept || "";
-          const kb = opt.dataset.kb || "";
-          if (deptInput) deptInput.value = dept;
-          if (kbInput) kbInput.value = kb;
-          if (ideptInput) ideptInput.value = dept;
-          if (ikbInput) ikbInput.value = kb;
-        };
-      } catch (e) {
-        // 后端异常时保持当前输入
-      }
+function formatSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function extIcon(name) {
+  const ext = name.split('.').pop().toLowerCase();
+  const map = { pdf: '📄', txt: '📝', md: '📋', docx: '📘', doc: '📘' };
+  return map[ext] || '📎';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatTime() {
+  return new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+}
+
+function dept() { return document.getElementById('t-dept').value.trim() || 'default'; }
+function kb()   { return document.getElementById('t-kb').value.trim() || 'default'; }
+
+/* ═══════════════════════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════════════════════ */
+let toastTimer;
+function showToast(msg, type = 'default', duration = 3000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast ' + type;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.add('hidden'), duration);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TOPBAR — health + KB 列表
+═══════════════════════════════════════════════════════════════ */
+async function checkHealth() {
+  const dot = document.getElementById('status-dot');
+  const txt = document.getElementById('status-text');
+  try {
+    const j = await API.health();
+    dot.className = 'status-dot ' + (j.status === 'ok' ? 'ok' : 'warn');
+    txt.textContent = j.status === 'ok' ? 'ready' : 'degraded';
+  } catch {
+    dot.className = 'status-dot warn';
+    txt.textContent = 'offline';
+  }
+}
+
+async function loadKbList() {
+  const el = document.getElementById('kb-list');
+  try {
+    const j = await API.listKbs();
+    const cols = j.collections || [];
+    if (!cols.length) {
+      el.innerHTML = '<div class="kb-item" style="font-size:0.8125rem;color:var(--text-3)">暂无已入库知识库</div>';
+      return;
     }
-    loadKbList();
 
-    (function initLlSummaryPref() {
-      const el = document.getElementById("ipresum");
-      if (!el) return;
-      try {
-        const v = localStorage.getItem("ragpulse_ingest_llm_chunk_summary");
-        if (v === "1" || v === "true") el.checked = true;
-        if (v === "0" || v === "false") el.checked = false;
-      } catch (err) { /* ignore */ }
-      el.addEventListener("change", () => {
-        try {
-          localStorage.setItem("ragpulse_ingest_llm_chunk_summary", el.checked ? "1" : "0");
-        } catch (err) { /* ignore */ }
+    // Group by dept_tag
+    const byDept = {};
+    for (const c of cols) {
+      const d = c.dept_tag || 'default';
+      if (!byDept[d]) byDept[d] = [];
+      byDept[d].push(c);
+    }
+
+    el.innerHTML = Object.keys(byDept).sort().map(dept => {
+      const items = byDept[dept].map(c => `
+        <div class="kb-coll-item">
+          <div class="kb-dot"></div>
+          <span class="kb-coll-name" title="${escapeHtml(c.kb_id)}">${escapeHtml(c.kb_id)}</span>
+          <span class="kb-coll-kind">${escapeHtml(c.kind || 'collection')}</span>
+          <button class="kb-action-btn" data-action="edit" data-dept="${escapeHtml(dept)}" data-kb="${escapeHtml(c.kb_id)}" title="编辑名称">✎</button>
+          <button class="kb-action-btn danger" data-action="delete" data-dept="${escapeHtml(dept)}" data-kb="${escapeHtml(c.kb_id)}" title="删除">✕</button>
+        </div>`).join('');
+      return `
+        <div class="kb-dept-group">
+          <div class="kb-dept-header" data-dept="${escapeHtml(dept)}">
+            <svg class="kb-dept-arrow" width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 1l4 3-4 3"/></svg>
+            <span class="kb-dept-label">${escapeHtml(dept)}</span>
+            <span class="kb-dept-count">${byDept[dept].length}</span>
+          </div>
+          <div class="kb-dept-items" style="display:none">${items}</div>
+        </div>`;
+    }).join('');
+
+    // Attach click handlers for accordion
+    el.querySelectorAll('.kb-dept-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const items = header.nextElementSibling;
+        const arrow = header.querySelector('.kb-dept-arrow');
+        const isOpen = items.style.display !== 'none';
+        items.style.display = isOpen ? 'none' : 'block';
+        arrow.style.transform = isOpen ? '' : 'rotate(90deg)';
       });
-    })();
+    });
 
-    document.getElementById("ingest").onsubmit = async (e) => {
-      e.preventDefault();
-      const btn = document.getElementById("ibtn");
-      const st = document.getElementById("istatus");
-      const raw = document.getElementById("iraw");
-      const f = document.getElementById("file").files[0];
-      if (!f) return;
-      btn.disabled = true;
-      st.classList.remove("ok", "warn");
-      const t0 = Date.now();
-      st.textContent = "入库中… 已等待 0s（长 PDF + deepdoc 可能需数分钟～数十分钟，请勿关页）";
-      const tick = setInterval(() => {
-        st.textContent = "入库中… 已等待 " + Math.floor((Date.now() - t0) / 1000) + "s（deepdoc+逐条嵌入，请耐心等待）";
-      }, 2000);
-      const fd = new FormData();
-      fd.append("file", f);
-      fd.append("dept_tag", document.getElementById("idept").value.trim() || "default");
-      fd.append("kb_id", document.getElementById("ikb").value.trim() || "default");
-      fd.append("parser", document.getElementById("iparser").value);
-      fd.append("pdf_doc_type", document.getElementById("idocType").value || "auto");
-      fd.append("replace_collection", document.getElementById("ireplace").checked ? "true" : "false");
-      fd.append("export_manifest", document.getElementById("iexport").checked ? "true" : "false");
-      fd.append("export_chunks_pre_embed", document.getElementById("iprechunk").checked ? "true" : "false");
-      fd.append("extract_pdf_images", document.getElementById("ipdfimg").checked ? "true" : "false");
-      fd.append("llm_chunk_summary", document.getElementById("ipresum").checked ? "true" : "false");
-      try {
-        const useAsync = document.getElementById("iasync").checked;
-        if (!useAsync) {
-          const r = await fetch(base + "/rag/ingest", { method: "POST", body: fd });
-          const data = await r.json().catch(() => ({}));
-          raw.textContent = JSON.stringify(data, null, 2);
-          if (!r.ok) {
-            st.textContent = "失败 HTTP " + r.status + " — " + (data.detail || JSON.stringify(data));
-            st.classList.add("warn");
-            return;
+    // Attach click handlers for edit/delete buttons
+    el.querySelectorAll('.kb-action-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const action = btn.dataset.action;
+        const dept = btn.dataset.dept;
+        const kb = btn.dataset.kb;
+        if (action === 'delete') {
+          if (confirm(`确认删除知识库「${kb}」（dept: ${dept}）？`)) {
+            try {
+              const result = await API.deleteCollection(dept, kb);
+              if (result.ok) {
+                showToast(`已删除「${kb}」`, 'ok');
+                loadKbList();
+              } else {
+                showToast('删除失败: ' + (result.detail || '未知错误'), 'err');
+              }
+            } catch (err) {
+              showToast('删除失败: ' + err.message, 'err');
+            }
           }
-          st.textContent = "入库完成 · chunks=" + data.chunk_count + " · collection=" + data.collection_name
-            + (data.llm_chunk_summary ? " · 增强摘要=开" : "")
-            + (data.ingest_chunks_pre_embed_path ? " · 嵌入前=" + data.ingest_chunks_pre_embed_path : "")
-            + (data.ingest_export_path ? " · manifest=" + data.ingest_export_path : "");
-          st.classList.add("ok");
-          document.getElementById("dept").value = document.getElementById("idept").value.trim();
-          document.getElementById("kb").value = document.getElementById("ikb").value.trim();
-          return;
-        }
-
-        const r0 = await fetch(base + "/rag/ingest/async", { method: "POST", body: fd });
-        const j0 = await r0.json().catch(() => ({}));
-        if (!r0.ok || !j0.task_id) {
-          raw.textContent = JSON.stringify(j0, null, 2);
-          st.textContent = "提交失败 HTTP " + r0.status + " — " + (j0.detail || JSON.stringify(j0));
-          st.classList.add("warn");
-          return;
-        }
-        const taskId = j0.task_id;
-        st.textContent = "任务已提交 task_id=" + taskId + "，开始轮询…";
-        raw.textContent = JSON.stringify(j0, null, 2);
-
-        while (true) {
-          await new Promise(res => setTimeout(res, 2000));
-          const rt = await fetch(base + "/rag/ingest/tasks/" + encodeURIComponent(taskId));
-          const jt = await rt.json().catch(() => ({}));
-          raw.textContent = JSON.stringify(jt, null, 2);
-          if (!rt.ok) {
-            st.textContent = "任务查询失败 HTTP " + rt.status + " — " + (jt.detail || "");
-            st.classList.add("warn");
-            break;
-          }
-          const elapsed = Number(jt.elapsed_sec || 0).toFixed(1);
-          st.textContent = "任务 " + jt.status + " · " + elapsed + "s"
-            + (jt.message ? " · " + jt.message : "");
-          if (jt.status === "succeeded") {
-            const data = jt.result || {};
-            st.textContent = "入库完成 · chunks=" + data.chunk_count + " · collection=" + data.collection_name
-              + (data.llm_chunk_summary ? " · 增强摘要=开" : "")
-              + (data.ingest_chunks_pre_embed_path ? " · 嵌入前=" + data.ingest_chunks_pre_embed_path : "")
-              + (data.ingest_export_path ? " · manifest=" + data.ingest_export_path : "");
-            st.classList.add("ok");
-            document.getElementById("dept").value = document.getElementById("idept").value.trim();
-            document.getElementById("kb").value = document.getElementById("ikb").value.trim();
-            break;
-          }
-          if (jt.status === "failed") {
-            st.textContent = "任务失败: " + (jt.error_type || "Error") + " — " + (jt.error || "");
-            st.classList.add("warn");
-            break;
+        } else if (action === 'edit') {
+          const newKb = prompt(`修改知识库名称（当前: ${kb}）：`, kb);
+          if (newKb && newKb !== kb) {
+            showToast('编辑功能后端未实现', 'err', 3000);
           }
         }
-      } catch (err) {
-        st.textContent = String(err);
-        raw.textContent = String(err);
-      } finally {
-        clearInterval(tick);
-        btn.disabled = false;
-      }
-    };
+      });
+    });
+  } catch {
+    el.innerHTML = '<div class="kb-item" style="font-size:0.8125rem;color:var(--text-3)">加载失败</div>';
+  }
+}
 
-    document.getElementById("qa").onsubmit = async (e) => {
-      e.preventDefault();
-      const btn = document.getElementById("qbtn");
-      const status = document.getElementById("qstatus");
-      const ans = document.getElementById("qanswer");
-      const hitsEl = document.getElementById("hits");
-      const rawEl = document.getElementById("raw");
-      btn.disabled = true;
-      status.textContent = "检索 + LLM 生成中…";
-      status.classList.remove("ok", "warn");
-      ans.style.display = "none";
-      const dept = document.getElementById("dept").value.trim();
-      const kb = document.getElementById("kb").value.trim();
-      const body = {
-        query: document.getElementById("qq").value.trim(),
-        top_k: parseInt(document.getElementById("qtopk").value, 10) || 5,
-        use_vision: document.getElementById("qvision").checked,
-        vision_max_images: 4,
-        ...(dept ? { dept_tag: dept } : {}),
-        ...(kb ? { kb_id: kb } : {}),
-      };
-      try {
-        const r = await fetch(base + "/rag/qa", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const data = await r.json();
-        rawEl.textContent = JSON.stringify(data, null, 2);
-        if (!r.ok) {
-          status.textContent = "错误 HTTP " + r.status + " — " + (data.detail || "");
-          status.classList.add("warn");
-          return;
-        }
-        status.textContent = "完成 · used_vision=" + data.used_vision + (data.vision_note ? " · " + data.vision_note : "");
-        status.classList.add("ok");
-        ans.style.display = "block";
-        const usedVision = data.used_vision ? "已向 LLM 发送图片" : "未向 LLM 发送图片";
-        // 将检索命中的 chunk 原图也展示在回答框中（无需重新生成，仅引用 metadata.image_uri 导出的 /static/images/...）
-        const imgUris = [];
-        const seenImg = new Set();
-        for (const h of (data.hits || [])) {
-          const list = h.image_uris || [];
-          for (const u of list) {
-            const s = String(u || "").trim();
-            if (!s || seenImg.has(s)) continue;
-            seenImg.add(s);
-            imgUris.push(s);
-          }
-        }
-        const maxThumbs = 6;
-        const thumbsHtml = imgUris.slice(0, maxThumbs).map(u =>
-          `<img src="${escapeAttr(u)}" alt="" style="max-width:100%;max-height:220px;border-radius:6px;margin:0.35rem 0;display:block;" loading="lazy" />`
-        ).join("") || "<span style='color: var(--muted)'>（本次未命中图片）</span>";
+/* ═══════════════════════════════════════════════════════════════
+   FILE LIST
+═══════════════════════════════════════════════════════════════ */
+function renderFileList() {
+  const el = document.getElementById('file-list');
+  if (!state.files.length) {
+    el.innerHTML = '<div class="file-list-empty">暂无已上传文件</div>';
+    return;
+  }
+  el.innerHTML = state.files.map(f => `
+    <div class="file-item${f.inContext ? ' in-context' : ''}" data-id="${f.id}">
+      <div class="file-icon">${extIcon(f.name)}</div>
+      <div class="file-info">
+        <div class="file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
+        <div class="file-meta">${formatSize(f.size)} · ${f.status || '上传中'}</div>
+      </div>
+      <span class="file-badge${f.ext === 'pdf' ? ' pdf' : ''}${f.inContext ? ' inctx' : ''}">
+        ${f.inContext ? '上下文' : f.ext.toUpperCase()}
+      </span>
+      ${f.taskId ? `<button class="file-remove" title="从列表移除" data-remove="${f.id}">✕</button>` : ''}
+    </div>`
+  ).join('');
 
-        ans.innerHTML = "<strong>LLM 回答</strong><br/>" + escapeHtml(data.answer || "(空)")
-          + "<div class='sub'>视觉：" + usedVision
-          + (data.vision_note ? " · " + escapeHtml(data.vision_note) : "")
-          + "</div>"
-          + "<div class='sub' style='margin-top:0.4rem'>命中图片（原图）：" + "</div>"
-          + thumbsHtml;
-        hitsEl.innerHTML = (data.hits || []).map((h, i) => {
-          const imgs = (h.image_uris && h.image_uris.length) ? h.image_uris.map(u =>
-            `<img src="${escapeAttr(u)}" alt="" style="max-width:100%;max-height:220px;border-radius:6px;margin:0.35rem 0;display:block;" loading="lazy" />`
-          ).join("") : "";
-          return `<div class="hit"><div class="meta">#${i} id=${escapeHtml(h.id)} distance=${Number(h.distance).toFixed(4)}</div>${imgs}<div>${escapeHtml(h.document || "").slice(0, 2000)}</div></div>`;
-        }).join("") || "<p class='note'>无命中</p>";
-      } catch (err) {
-        status.textContent = String(err);
-        rawEl.textContent = String(err);
-      } finally {
-        btn.disabled = false;
-      }
-    };
+  // remove buttons
+  el.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const id = btn.dataset.remove;
+      state.files = state.files.filter(f => f.id !== id);
+      renderFileList();
+    });
+  });
+}
 
-    document.getElementById("f").onsubmit = async (e) => {
-      e.preventDefault();
-      const btn = document.getElementById("btn");
-      const status = document.getElementById("status");
-      const hitsEl = document.getElementById("hits");
-      const rawEl = document.getElementById("raw");
-      btn.disabled = true;
-      status.textContent = "检索中…";
-      status.classList.remove("ok");
+/* ═══════════════════════════════════════════════════════════════
+   UPLOAD — 拖拽 + 点击
+═══════════════════════════════════════════════════════════════ */
+const uploadZone = document.getElementById('upload-zone');
+const fileInput = document.getElementById('file-input');
 
-      const dept = document.getElementById("dept").value.trim();
-      const kb = document.getElementById("kb").value.trim();
-      const body = {
-        query: document.getElementById("q").value.trim(),
-        top_k: parseInt(document.getElementById("topk").value, 10) || 5,
-        auto_export_retrieval: document.getElementById("export").checked,
-        ...(dept ? { dept_tag: dept } : {}),
-        ...(kb ? { kb_id: kb } : {}),
-      };
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', () => handleFiles(fileInput.files));
 
-      try {
-        const r = await fetch(base + "/rag/retrieve", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        const data = await r.json();
-        rawEl.textContent = JSON.stringify(data, null, 2);
-        if (!r.ok) {
-          status.textContent = "错误 HTTP " + r.status;
-          hitsEl.innerHTML = "";
-          return;
-        }
-        status.textContent = "完成 · 命中 " + (data.hits || []).length + " 条" + (data.export_path ? " · 已导出 " + data.export_path : "");
-        status.classList.add("ok");
-        hitsEl.innerHTML = (data.hits || []).map((h, i) => {
-          const imgs = (h.image_uris && h.image_uris.length) ? h.image_uris.map(u =>
-            `<img src="${escapeAttr(u)}" alt="" style="max-width:100%;max-height:220px;border-radius:6px;margin:0.35rem 0;display:block;" loading="lazy" />`
-          ).join("") : "";
-          return `<div class="hit"><div class="meta">#${i} id=${escapeHtml(h.id)} distance=${Number(h.distance).toFixed(4)}</div>${imgs}<div>${escapeHtml(h.document || "").slice(0, 2000)}</div></div>`;
-        }).join("") || "<p class='note'>无命中</p>";
-      } catch (err) {
-        status.textContent = String(err);
-        rawEl.textContent = String(err);
-        hitsEl.innerHTML = "";
-      } finally {
-        btn.disabled = false;
-      }
-    };
+async function handleFiles(fileList) {
+  const files = Array.from(fileList);
+  if (!files.length) return;
 
-    function escapeHtml(s) {
-      return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  for (const f of files) {
+    const id = generateId('file_');
+    state.files.push({ id, name: f.name, size: f.size, ext: f.name.split('.').pop().toLowerCase(), inContext: false, taskId: null, status: '等待上传' });
+  }
+  renderFileList();
+
+  for (const f of files) {
+    const fileEntry = state.files.find(x => x.name === f.name && x.id !== undefined);
+    if (!fileEntry) continue;
+
+    const formData = new FormData();
+    formData.append('file', f);
+    formData.append('dept_tag', dept());
+    formData.append('kb_id', kb());
+    formData.append('parser', document.getElementById('parser-select').value || 'auto');
+    formData.append('pdf_doc_type', 'auto');
+    formData.append('replace_collection', 'false');
+    formData.append('export_manifest', 'true');
+    formData.append('export_chunks_pre_embed', 'true');
+    formData.append('extract_pdf_images', 'true');
+    formData.append('llm_chunk_summary', 'false');
+
+    fileEntry.status = '上传中…';
+    renderFileList();
+
+    try {
+      const r = await API.ingest(formData);
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.task_id) throw new Error(j.detail || '上传失败');
+      fileEntry.taskId = j.task_id;
+      fileEntry.status = '解析中…';
+      renderFileList();
+
+      // Poll task status
+      await pollIngestTask(fileEntry);
+    } catch (err) {
+      fileEntry.status = '失败: ' + err.message;
+      fileEntry.inContext = false;
+      renderFileList();
+      showToast(err.message, 'err');
     }
-    function escapeAttr(s) {
-      return escapeHtml(s).replace(/"/g, "&quot;");
+  }
+}
+
+async function pollIngestTask(fileEntry) {
+  while (true) {
+    await new Promise(r => setTimeout(r, 2000));
+    const j = await API.ingestStatus(fileEntry.taskId).catch(() => null);
+    if (!j) break;
+
+    fileEntry.status = j.status === 'running' ? '处理中…' : j.status;
+    renderFileList();
+
+    if (j.status === 'succeeded') {
+      fileEntry.status = '已完成';
+      fileEntry.inContext = true;
+      renderFileList();
+      showToast(`「${fileEntry.name}」入库完成`, 'ok');
+      // 刷新 KB 列表
+      loadKbList();
+      break;
     }
-  </script>
+    if (j.status === 'failed') {
+      fileEntry.status = '失败';
+      fileEntry.inContext = false;
+      renderFileList();
+      showToast(`「${fileEntry.name}」入库失败: ${j.error || j.error_type}`, 'err');
+      break;
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SESSION
+═══════════════════════════════════════════════════════════════ */
+function newSession() {
+  state.sessionId = generateId('sess_');
+  state.messages = [];
+  renderMessages();
+  showToast('新会话已创建', 'ok', 2000);
+}
+
+async function loadSessions() {
+  try {
+    const j = await API.listSessions(state.memoryId, state.userId);
+    const sel = document.getElementById('session-select');
+    const sessions = j.sessions || [];
+    sel.innerHTML = '<option value="">— 新建会话 —</option>' +
+      sessions.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+    sel.value = state.sessionId;
+  } catch {}
+}
+
+document.getElementById('session-select').addEventListener('change', e => {
+  if (e.target.value) {
+    state.sessionId = e.target.value;
+    state.messages = [];
+    renderMessages();
+  }
+});
+
+document.getElementById('btn-new-session').addEventListener('click', newSession);
+document.getElementById('btn-clear-session').addEventListener('click', async () => {
+  if (!state.sessionId) return;
+  try {
+    await API.clearMemory(state.memoryId, state.sessionId, state.userId);
+    state.messages = [];
+    renderMessages();
+    showToast('会话记忆已清空', 'ok');
+  } catch (err) {
+    showToast('清空失败: ' + err.message, 'err');
+  }
+});
+document.getElementById('btn-list-sessions').addEventListener('click', loadSessions);
+
+/* ═══════════════════════════════════════════════════════════════
+   MESSAGES RENDER
+═══════════════════════════════════════════════════════════════ */
+function renderMessages() {
+  const el = document.getElementById('chat-messages');
+  if (!el) return;
+  const empty = document.getElementById('empty-state');
+
+  if (!state.messages.length) {
+    el.innerHTML = '';
+    if (empty) el.appendChild(empty);
+    if (empty) empty.style.display = '';
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+  el.innerHTML = state.messages.map(m => {
+    const refs = (m.refs || []).map(r =>
+      `<span class="chip" title="${escapeHtml(r.id || '')}">${escapeHtml((r.document || '').slice(0, 20))}…</span>`
+    ).join('');
+
+    const loading = m.loading
+      ? `<div class="loading-dots"><span></span><span></span><span></span></div>`
+      : '';
+
+    return `<div class="msg ${m.role}${m.loading ? ' loading' : ''}" id="${m.id}">
+      <div class="msg-avatar">${m.role === 'user' ? 'U' : 'A'}</div>
+      <div class="msg-body">
+        <div class="msg-content">${m.loading ? loading : escapeHtml(m.content)}</div>
+        ${refs ? `<div class="msg-refs">${refs}</div>` : ''}
+        <div class="msg-time">${m.time}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Scroll to bottom
+  el.scrollTop = el.scrollHeight;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CHAT — send
+═══════════════════════════════════════════════════════════════ */
+const chatInput = document.getElementById('chat-input');
+const sendBtn = document.getElementById('send-btn');
+
+async function sendMessage() {
+  const text = chatInput.value.trim();
+  if (!text) return;
+
+  // Auto-resize: keep it single line visually (user can still type multi-line before send)
+  chatInput.value = '';
+  chatInput.style.height = 'auto';
+
+  const userMsg = { id: generateId('m_'), role: 'user', content: text, time: formatTime(), refs: [] };
+  state.messages.push(userMsg);
+  renderMessages();
+
+  const loaderId = generateId('m_');
+  state.messages.push({ id: loaderId, role: 'assistant', content: '', time: formatTime(), refs: [], loading: true });
+  renderMessages();
+
+  try {
+    let data;
+    if (state.agentMode === 'multimodal') {
+      // 多模态模式：调用 /rag/qa，支持图片召回
+      const payload = {
+        query: text,
+        dept_tag: dept(),
+        kb_id: kb(),
+        top_k: 5,
+        use_vision: true,
+        vision_max_images: 4
+      };
+      data = await API.qa(payload);
+      // Remove loader
+      state.messages = state.messages.filter(m => m.id !== loaderId);
+      const assistantMsg = {
+        id: generateId('m_'),
+        role: 'assistant',
+        content: data.answer || '(空响应)',
+        time: formatTime(),
+        refs: data.hits || []
+      };
+      state.messages.push(assistantMsg);
+      renderMessages();
+    } else {
+      // 文本模式：调用 /agent/chat
+      const payload = {
+        query: text,
+        session_id: state.sessionId,
+        memory_id: state.memoryId,
+        user_id: state.userId,
+        top_k: 5,
+        use_rag: true,
+        include_long_term_memory: true,
+        dept_tag: dept(),
+        kb_id: kb()
+      };
+      data = await API.chat(payload);
+      // Remove loader
+      state.messages = state.messages.filter(m => m.id !== loaderId);
+      const assistantMsg = {
+        id: generateId('m_'),
+        role: 'assistant',
+        content: data.response || '(空响应)',
+        time: formatTime(),
+        refs: data.rag_results || []
+      };
+      state.messages.push(assistantMsg);
+      renderMessages();
+    }
+
+    // Switch session select to current
+    const sel = document.getElementById('session-select');
+    if (sel) sel.value = state.sessionId;
+  } catch (err) {
+    state.messages = state.messages.filter(m => m.id !== loaderId);
+    state.messages.push({
+      id: generateId('m_'),
+      role: 'assistant',
+      content: '⚠ 请求失败: ' + err.message,
+      time: formatTime(),
+      refs: []
+    });
+    renderMessages();
+  }
+}
+
+sendBtn.addEventListener('click', sendMessage);
+
+chatInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+});
+
+// Auto-resize textarea
+chatInput.addEventListener('input', () => {
+  chatInput.style.height = 'auto';
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 120) + 'px';
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════════════ */
+checkHealth();
+loadKbList();
+loadSessions();
+renderFileList();
+chatInput.focus();
+
+/* Agent mode toggle */
+document.getElementById('btn-mode-text').addEventListener('click', () => {
+  state.agentMode = 'text';
+  document.getElementById('btn-mode-text').classList.add('active');
+  document.getElementById('btn-mode-vision').classList.remove('active');
+  showToast('已切换到文本模式', 'ok', 1500);
+});
+document.getElementById('btn-mode-vision').addEventListener('click', () => {
+  state.agentMode = 'multimodal';
+  document.getElementById('btn-mode-vision').classList.add('active');
+  document.getElementById('btn-mode-text').classList.remove('active');
+  showToast('已切换到多模态模式，支持图片召回', 'ok', 1500);
+});
+</script>
 </body>
 </html>

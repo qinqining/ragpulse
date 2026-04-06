@@ -1,7 +1,3 @@
-"""
-ragpulse 最小 HTTP 入口：健康检查 + RAG 检索演示（需配置 .env）。
-"""
-
 from __future__ import annotations
 
 import logging
@@ -18,6 +14,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -27,6 +24,35 @@ _log = logging.getLogger("main")
 load_dotenv(_ROOT / ".env")
 
 app = FastAPI(title="ragpulse", version="0.1.0")
+
+# CORS — allow browser JS from any origin (dev friendly, tighten for prod)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.on_event("startup")
+def _configure_agent_chat_logging() -> None:
+    """保证 /agent/chat 的 INFO 日志能打到终端（根 logger 默认 WARNING 会丢掉）。"""
+    lg = logging.getLogger("api.agent_api")
+    lg.setLevel(logging.INFO)
+    if not lg.handlers:
+        h = logging.StreamHandler()
+        h.setFormatter(logging.Formatter("%(levelname)s [agent] %(message)s"))
+        lg.addHandler(h)
+        lg.propagate = False
+
+
+# Include agent API routes
+try:
+    from api.agent_api import router as agent_router
+    app.include_router(agent_router)
+except ImportError:
+    _log.warning("Agent API not available - agent module may not be installed")
 
 if _STATIC.is_dir():
     app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
@@ -223,6 +249,18 @@ def rag_kbs() -> dict[str, Any]:
     # 稳定排序：dept -> kb -> kind
     cols.sort(key=lambda x: (x.get("dept_tag", ""), x.get("kb_id", ""), x.get("kind", "")))
     return {"collections": cols}
+
+
+@app.delete("/rag/kbs/{dept_tag}/{kb_id}")
+def rag_kbs_delete(dept_tag: str, kb_id: str, kind: str = "default") -> dict[str, Any]:
+    """删除指定 collection（按 dept_tag + kb_id + kind 定位）。"""
+    from rag.retrieval.chroma_client import ChromaRagStore
+
+    store = ChromaRagStore()
+    ok = store.delete_collection(dept=dept_tag, kb_id=kb_id, kind=kind)
+    if ok:
+        return {"ok": True, "dept_tag": dept_tag, "kb_id": kb_id, "kind": kind}
+    raise HTTPException(status_code=404, detail=f"Collection not found or delete failed: {dept_tag}/{kb_id}/{kind}")
 
 
 @app.post("/rag/ingest")

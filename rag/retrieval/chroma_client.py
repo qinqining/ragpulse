@@ -128,6 +128,18 @@ class ChromaRagStore:
     def get_collection(self, name: str):
         return self._client.get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
 
+    def delete_collection(self, *, dept: str, kb_id: str, kind: str = "default") -> bool:
+        """删除指定 collection。返回 True/False 表示是否成功。"""
+        name = collection_name(dept=dept, kb_id=kb_id, kind=kind)
+        try:
+            self._client.delete_collection(name=name)
+            _log.info("deleted collection=%s", name)
+            rag_print(f"delete_collection name={name}", tag="rag.chroma")
+            return True
+        except Exception as e:
+            _log.error("delete_collection failed name=%s: %s", name, e)
+            return False
+
     def add(
         self,
         *,

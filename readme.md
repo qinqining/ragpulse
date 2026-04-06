@@ -15,9 +15,10 @@
 | **LLM** | `rag/llm/chat_model.py`：OpenAI 兼容 Chat（百炼 compatible-mode 等） |
 | **多模态（解析侧）** | `rag/app/picture.py`：页面/插图 → 视觉模型 → 文本描述（供 deepdoc 调用） |
 | **记忆存储** | `common/settings.py` + `common/doc_store/sqlite_message_store.py`：`messages.py` 使用的 SQLite 后端 |
+| **AI代理** | `rag/agent/`：具备上下文记忆、长期记忆和自由互动能力的智能代理 |
 | **JSON 检查** | `rag/retrieval/json_export.py`：入库 manifest / 检索结果落盘 |
 | **可观测** | `rag/utils/verbose.py`：`RAG_VERBOSE=1` 时 RAG 全链路 `[rag.*]` 输出至 stderr |
-| **HTTP 演示** | `main.py`：`GET /`、`GET /health`、`POST /rag/ingest`（同步上传）、`POST /rag/ingest/async` + `GET /rag/ingest/tasks/{task_id}`（异步入库轮询）、`POST /rag/retrieve`（仅检索）、`POST /rag/qa`（检索+LLM 回答） |
+| **HTTP 演示** | `main.py`：`GET /`、`GET /health`、`POST /rag/ingest`（同步上传）、`POST /rag/ingest/async` + `GET /rag/ingest/tasks/{task_id}`（异步入库轮询）、`POST /rag/retrieve`（仅检索）、`POST /rag/qa`（检索+LLM 回答）、`POST /agent/chat`（智能代理对话）、`GET /agent/memory/list`（列出记忆）、`POST /agent/memory/clear`（清除记忆）、`GET /agent/sessions/list`（列出会话） |
 | **端到端自测** | 根目录 `test.py` + **`TEST_RAG.md`**（PDF 文本抽取 → 嵌入 → Chroma → 检索） |
 
 ---
@@ -46,7 +47,7 @@ PYTHONPATH=. python test.py
 
 详见 **`TEST_RAG.md`**。
 
-### 3. 启动 HTTP
+### 3. 启动 HTTP 服务
 
 ```bash
 PYTHONPATH=. uvicorn main:app --host 0.0.0.0 --port 8000
@@ -56,11 +57,49 @@ PYTHONPATH=. uvicorn main:app --host 0.0.0.0 --port 8000
 # 解析器列表: GET /rag/ingest/options
 # 检索: POST /rag/retrieve  JSON: {"query":"...","top_k":5,"dept_tag":"test_rag","kb_id":"attention",...}
 # RAG+回答: POST /rag/qa  JSON: 同上 + 可选 "use_vision":true（需 RAG_PUBLIC_BASE_URL + LLM_VISION_MODEL）
+# AI代理: POST /agent/chat  JSON: {"query":"...","session_id":"...","memory_id":"...","top_k":5,...}
 # 飞书/微信/App 对接说明: docs/integrations.md
 # 长文入库建议走异步: POST /rag/ingest/async -> 返回 task_id，再 GET /rag/ingest/tasks/{task_id} 轮询
 ```
 
 检索使用的 collection 由 **`RAG_DEPT`、`RAG_KB_ID`**（请求体可覆盖）决定，需与入库时一致（例如先 `test.py` 再在前端填相同 dept/kb）。
+
+#### 启动AI代理服务
+
+AI代理服务会随主服务一起启动，无需额外操作。确保在 `.env` 中正确配置了API密钥和模型设置。
+
+**AI代理使用示例：**
+
+```bash
+# 与AI代理对话
+curl -X POST "http://localhost:8000/agent/chat" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "你好，介绍一下你自己",
+    "session_id": "my_session",
+    "memory_id": "my_memory",
+    "top_k": 5,
+    "use_rag": true,
+    "include_long_term_memory": true
+  }'
+
+# 列出记忆信息
+curl -X GET "http://localhost:8000/agent/memory/list" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "memory_id": "my_memory",
+    "user_id": "default"
+  }'
+
+# 清除特定会话的记忆
+curl -X POST "http://localhost:8000/agent/memory/clear" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "memory_id": "my_memory",
+    "session_id": "my_session",
+    "user_id": "default"
+  }'
+```
 
 #### PDF 入库：deepdoc vs pypdf
 

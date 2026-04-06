@@ -1,0 +1,14 @@
+/root/miniconda3/envs/ragpulse/lib/python3.12/site-packages/requests/__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (7.2.0)/charset_normalizer (3.4.6) doesn't match a supported version!
+  warnings.warn(
+INFO:     Started server process [105994]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     127.0.0.1:53720 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53722 - "GET /health HTTP/1.1" 200 OK
+[ingest] 嵌入请求 1/1
+INFO:     127.0.0.1:56050 - "POST /agent/chat HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [105994]
