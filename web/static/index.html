@@ -221,6 +221,26 @@
     .file-remove:hover { color: var(--danger); background: var(--danger-bg); }
     .file-list-empty { padding: 1.25rem 1rem; text-align: center; font-size: 0.8125rem; color: var(--text-3); }
 
+    /* File action bar */
+    .file-action-bar {
+      display: flex; gap: 0.375rem; padding: 0.5rem 1rem;
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .file-action-bar .btn-ingest {
+      flex: 1; background: var(--accent); color: #fff;
+      border: none; border-radius: var(--radius-sm);
+      padding: 0.375rem; font-size: 0.8125rem; cursor: pointer; font-weight: 500;
+    }
+    .file-action-bar .btn-ingest:disabled { opacity: 0.4; cursor: default; }
+    .file-action-bar .btn-revoke {
+      flex: 1; background: var(--surface-alt); color: var(--text-2);
+      border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 0.375rem; font-size: 0.8125rem; cursor: pointer;
+    }
+    .file-action-bar .btn-revoke:disabled { opacity: 0.4; cursor: default; }
+    .file-checkbox { width: 14px; height: 14px; cursor: pointer; accent-color: var(--accent); flex-shrink: 0; }
+    .file-item.selected { background: var(--accent-bg); }
+
     /* Sidebar — KB list */
     .sidebar-kb {
       border-top: 1px solid var(--border);
@@ -526,6 +546,12 @@
         </div>
       </div>
 
+      <!-- File action bar -->
+      <div class="file-action-bar" id="file-action-bar">
+        <button class="btn-ingest" id="btn-ingest" disabled>入库</button>
+        <button class="btn-revoke" id="btn-revoke" disabled>撤销</button>
+      </div>
+
       <!-- File list -->
       <div class="sidebar-files">
         <div class="file-list" id="file-list">
@@ -678,7 +704,8 @@ const state = {
   memoryId: 'default',
   userId: 'default',
   agentMode: 'text',  // 'text' | 'multimodal'
-  files: [],         // { id, name, size, type, inContext, taskId }
+  files: [],         // { id, name, size, type, inContext, taskId, selected }
+  selectedFiles: new Set(),
   kbCollections: [], // from /rag/kbs
   messages: [],     // { id, role, content, time, refs, loading }
 };
@@ -831,14 +858,19 @@ function renderFileList() {
   const el = document.getElementById('file-list');
   if (!state.files.length) {
     el.innerHTML = '<div class="file-list-empty">暂无已上传文件</div>';
+    updateActionBar();
     return;
   }
   el.innerHTML = state.files.map(f => `
-    <div class="file-item${f.inContext ? ' in-context' : ''}" data-id="${f.id}">
+    <div class="file-item${f.inContext ? ' in-context' : ''}${state.selectedFiles.has(f.id) ? ' selected' : ''}" data-id="${f.id}">
+      <input type="checkbox" class="file-checkbox"
+        data-cb="${f.id}"
+        ${f.inContext || f.taskId ? 'disabled' : ''}
+        ${state.selectedFiles.has(f.id) ? 'checked' : ''}>
       <div class="file-icon">${extIcon(f.name)}</div>
       <div class="file-info">
         <div class="file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</div>
-        <div class="file-meta">${formatSize(f.size)} · ${f.status || '上传中'}</div>
+        <div class="file-meta">${formatSize(f.size)} · ${f.status || '待入库'}</div>
       </div>
       <span class="file-badge${f.ext === 'pdf' ? ' pdf' : ''}${f.inContext ? ' inctx' : ''}">
         ${f.inContext ? '上下文' : f.ext.toUpperCase()}
@@ -847,48 +879,62 @@ function renderFileList() {
     </div>`
   ).join('');
 
+  // checkbox handlers
+  el.querySelectorAll('[data-cb]').forEach(cb => {
+    cb.addEventListener('change', e => {
+      const id = cb.dataset.cb;
+      if (e.target.checked) {
+        state.selectedFiles.add(id);
+      } else {
+        state.selectedFiles.delete(id);
+      }
+      renderFileList();
+    });
+  });
+
   // remove buttons
   el.querySelectorAll('[data-remove]').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
       const id = btn.dataset.remove;
       state.files = state.files.filter(f => f.id !== id);
+      state.selectedFiles.delete(id);
       renderFileList();
+      updateActionBar();
     });
   });
+
+  updateActionBar();
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   UPLOAD — 拖拽 + 点击
-═══════════════════════════════════════════════════════════════ */
-const uploadZone = document.getElementById('upload-zone');
-const fileInput = document.getElementById('file-input');
+function updateActionBar() {
+  const btnIngest = document.getElementById('btn-ingest');
+  const btnRevoke = document.getElementById('btn-revoke');
+  const selected = state.selectedFiles.size;
+  // 可入库：选中 + status 为待入库
+  const ingestable = Array.from(state.selectedFiles).filter(id => {
+    const f = state.files.find(x => x.id === id);
+    return f && f.status === '待入库';
+  });
+  btnIngest.disabled = ingestable.length === 0;
+  btnRevoke.disabled = selected === 0;
+}
 
-uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
-uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
-uploadZone.addEventListener('drop', e => {
-  e.preventDefault();
-  uploadZone.classList.remove('drag-over');
-  handleFiles(e.dataTransfer.files);
-});
-fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+async function doIngest() {
+  const ids = Array.from(state.selectedFiles);
+  const pending = ids.map(id => state.files.find(f => f.id === id)).filter(f => f && f.status === '待入库');
+  if (!pending.length) return;
 
-async function handleFiles(fileList) {
-  const files = Array.from(fileList);
-  if (!files.length) return;
-
-  for (const f of files) {
-    const id = generateId('file_');
-    state.files.push({ id, name: f.name, size: f.size, ext: f.name.split('.').pop().toLowerCase(), inContext: false, taskId: null, status: '等待上传' });
-  }
-  renderFileList();
-
-  for (const f of files) {
-    const fileEntry = state.files.find(x => x.name === f.name && x.id !== undefined);
-    if (!fileEntry) continue;
+  for (const fileEntry of pending) {
+    const fileObj = fileEntry._file;
+    if (!fileObj) {
+      fileEntry.status = '失败: 文件未找到';
+      renderFileList();
+      continue;
+    }
 
     const formData = new FormData();
-    formData.append('file', f);
+    formData.append('file', fileObj);
     formData.append('dept_tag', dept());
     formData.append('kb_id', kb());
     formData.append('parser', document.getElementById('parser-select').value || 'auto');
@@ -908,9 +954,8 @@ async function handleFiles(fileList) {
       if (!r.ok || !j.task_id) throw new Error(j.detail || '上传失败');
       fileEntry.taskId = j.task_id;
       fileEntry.status = '解析中…';
+      state.selectedFiles.delete(fileEntry.id);
       renderFileList();
-
-      // Poll task status
       await pollIngestTask(fileEntry);
     } catch (err) {
       fileEntry.status = '失败: ' + err.message;
@@ -919,6 +964,50 @@ async function handleFiles(fileList) {
       showToast(err.message, 'err');
     }
   }
+}
+
+function doRevoke() {
+  const ids = Array.from(state.selectedFiles);
+  const toRemove = ids.map(id => state.files.find(f => f.id === id)).filter(f => f && f.status === '待入库');
+  if (!toRemove.length) {
+    showToast('只有待入库的文件可以撤销', 'err');
+    return;
+  }
+  toRemove.forEach(f => {
+    state.files = state.files.filter(x => x.id !== f.id);
+    state.selectedFiles.delete(f.id);
+  });
+  renderFileList();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   UPLOAD — 拖拽 + 点击
+═══════════════════════════════════════════════════════════════ */
+const uploadZone = document.getElementById('upload-zone');
+const fileInput = document.getElementById('file-input');
+
+uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault();
+  uploadZone.classList.remove('drag-over');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', () => handleFiles(fileInput.files));
+
+document.getElementById('btn-ingest').addEventListener('click', doIngest);
+document.getElementById('btn-revoke').addEventListener('click', doRevoke);
+
+async function handleFiles(fileList) {
+  const files = Array.from(fileList);
+  if (!files.length) return;
+
+  for (const f of files) {
+    const id = generateId('file_');
+    state.files.push({ id, name: f.name, size: f.size, ext: f.name.split('.').pop().toLowerCase(), inContext: false, taskId: null, status: '待入库', _file: f });
+    state.selectedFiles.add(id);
+  }
+  renderFileList();
 }
 
 async function pollIngestTask(fileEntry) {
