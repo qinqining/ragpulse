@@ -31,6 +31,7 @@ PARSER_CHOICES: list[dict[str, str]] = [
     {"value": "txt", "label": "纯文本 .txt"},
     {"value": "md", "label": "Markdown .md"},
     {"value": "docx", "label": "Word .docx（需 python-docx）"},
+    {"value": "url", "label": "网页 URL（Trafilatura 清洗）"},
 ]
 
 # 当 parser=auto 时，用扩展名决定实际解析器；未列出的后缀默认按 txt 读
@@ -193,6 +194,48 @@ def extract_pages(path: Path, parser_kind: str) -> PageExtract:
             return PageExtract(pages=[], engine="docx", detail="无段落")
         return PageExtract(pages=[(1, text)], engine="docx", detail="段落合并单页")
 
+    if kind == "url":
+        return _extract_url(path)
+
     raise ValueError(
-        f"不支持的 parser: {parser_kind!r}。可选: pdf, pdf_deepdoc, pdf_pypdf, txt, md, docx, auto"
+        f"不支持的 parser: {parser_kind!r}。可选: pdf, pdf_deepdoc, pdf_pypdf, txt, md, docx, url, auto"
+    )
+
+
+def _extract_url(path: Path) -> PageExtract:
+    """
+    使用 Trafilatura 从网页 URL 抽取正文文本。
+
+    ``path`` 为包含 URL 字符串的临时文件路径（由调用方写入 URL 内容）。
+    清洗函数：输入 = 原始 HTML，输出 = 清洗后的纯文本。
+    """
+    try:
+        import trafilatura
+    except ImportError:
+        raise RuntimeError(
+            "请安装 trafilatura：pip install trafilatura"
+        ) from None
+
+    url = path.read_text().strip()
+    if not url:
+        return PageExtract(pages=[], engine="url", detail="URL 为空")
+
+    # 检查是否为有效 URL
+    if not url.startswith(("http://", "https://")):
+        return PageExtract(pages=[], engine="url", detail="无效 URL（需以 http:// 或 https:// 开头）")
+
+    ingest_log(f"Trafilatura: 正在抓取 {url}")
+    downloaded = trafilatura.fetch_url(url)
+    if not downloaded:
+        return PageExtract(pages=[], engine="url", detail=f"无法抓取该 URL: {url}")
+
+    text = trafilatura.extract(downloaded)
+    if not text:
+        return PageExtract(pages=[], engine="url", detail="该页面无有效文本内容")
+
+    ingest_log(f"Trafilatura: 提取到 {len(text)} 字符")
+    return PageExtract(
+        pages=[(1, text)],
+        engine="url",
+        detail=f"Trafilatura 清洗 · {len(text)} 字符",
     )

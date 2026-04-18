@@ -1,5 +1,5 @@
 """
-入库进度：默认向 stderr 打印 ``[ingest] ...``（flush），便于 uvicorn 终端观察长耗时任务。
+入库进度：默认向 stderr 打印 ``[embed] ...``（flush），便于 uvicorn 终端观察长耗时任务。
 
 关闭：``RAG_INGEST_PROGRESS=0`` 或 ``false``。
 """
@@ -15,7 +15,7 @@ def ingest_log(msg: str) -> None:
     v = (os.getenv("RAG_INGEST_PROGRESS", "1") or "1").strip().lower()
     if v in ("0", "false", "no", "off"):
         return
-    print(f"[ingest] {msg}", file=sys.stderr, flush=True)
+    print(f"[embed] {msg}", file=sys.stderr, flush=True)
 
 
 def ingest_log_start(phase: str) -> float:

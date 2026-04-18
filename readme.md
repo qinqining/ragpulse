@@ -38,6 +38,7 @@ PYTHONPATH=. uvicorn main:app --host 0.0.0.0 --port 8000
 ### 3) 常用 API
 
 - **入库（异步，推荐）**：`POST /rag/ingest/async` → `GET /rag/ingest/tasks/{task_id}`
+- **网页 URL 入库（Trafilatura）**：`POST /rag/ingest/url/async`（或同步 `POST /rag/ingest/url`）；解析器 `parser=url`
 - **仅检索**：`POST /rag/retrieve`
 - **RAG 问答**：`POST /rag/qa`
 - **Agent 对话**：`POST /agent/chat`

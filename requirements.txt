@@ -16,6 +16,8 @@ chromadb>=0.4.0
 beartype>=0.17.0
 pypdf>=4.0.0
 python-docx>=1.1.0
+# 可选：parser=url / POST /rag/ingest/url（Trafilatura 抓取网页并抽正文）
+trafilatura>=2.0.0
 
 # deepdoc PDF（RAGFlowPdfParser）入库建议一并安装（缺一都会在 import 阶段失败）：
 pdfplumber>=0.11.0

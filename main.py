@@ -376,6 +376,182 @@ def rag_ingest_async(
     return {"ok": True, "task_id": task_id, "status": "queued"}
 
 
+class UrlIngestRequest(BaseModel):
+    """网页 URL 入库请求体。"""
+    url: str
+    dept_tag: str = "default"
+    kb_id: str = "default"
+    parser: str = "url"
+    replace_collection: bool = False
+    export_manifest: bool = True
+    export_chunks_pre_embed: bool = True
+    llm_chunk_summary: bool = False
+
+
+def _run_ingest_url_sync(
+    *,
+    url: str,
+    dept_tag: str,
+    kb_id: str,
+    parser: str,
+    replace_collection: bool,
+    export_manifest: bool,
+    export_chunks_pre_embed: bool,
+    llm_chunk_summary: bool,
+) -> dict[str, Any]:
+    """
+    将 URL 内容写入临时文件，然后走标准 run_ingest 链路。
+    Trafilatura 清洗函数：输入 = 原始 HTML，纯 HTML 清洗库。
+    """
+    import tempfile
+
+    from rag.ingest.service import run_ingest
+
+    # URL 内容写入临时文件（parsers._extract_url 读取此文件）
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".url", mode="w", encoding="utf-8") as tmp:
+        tmp.write(url)
+        tmp_path = Path(tmp.name)
+
+    original_filename = f"url_{url[:80]}"
+    try:
+        return run_ingest(
+            file_path=tmp_path,
+            original_filename=original_filename,
+            dept_tag=dept_tag,
+            kb_id=kb_id,
+            parser=parser,
+            pdf_doc_type="naive",
+            replace_collection=replace_collection,
+            export_manifest=export_manifest,
+            export_chunks_pre_embed=export_chunks_pre_embed,
+            extract_pdf_images=False,
+            llm_chunk_summary=llm_chunk_summary,
+        )
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+def _start_url_ingest_task(*, task_id: str, payload: dict[str, Any]) -> None:
+    def worker() -> None:
+        t0 = _now_ts()
+        _task_update(task_id, status="running", message="url ingest running")
+        try:
+            result = _run_ingest_url_sync(**payload)
+            _task_update(
+                task_id,
+                status="succeeded",
+                message="url ingest finished",
+                result=result,
+                elapsed_sec=round(_now_ts() - t0, 3),
+            )
+        except ValueError as e:
+            _task_update(
+                task_id,
+                status="failed",
+                error_type="ValueError",
+                error=str(e),
+                elapsed_sec=round(_now_ts() - t0, 3),
+            )
+        except RuntimeError as e:
+            _task_update(
+                task_id,
+                status="failed",
+                error_type="RuntimeError",
+                error=str(e),
+                elapsed_sec=round(_now_ts() - t0, 3),
+            )
+        except Exception as e:
+            _log.error("url ingest worker crashed: %s", e, exc_info=True)
+            _task_update(
+                task_id,
+                status="failed",
+                error_type=type(e).__name__,
+                error=str(e),
+                elapsed_sec=round(_now_ts() - t0, 3),
+            )
+
+    th = threading.Thread(target=worker, name=f"url-ingest-{task_id[:8]}", daemon=True)
+    th.start()
+
+
+@app.post("/rag/ingest/url")
+def rag_ingest_url(body: UrlIngestRequest = ...) -> dict[str, Any]:
+    """
+    网页 URL 入库（同步）：抓取 → Trafilatura 清洗 → 分块 → 嵌入 → 写入 Chroma。
+    """
+    dept = (body.dept_tag or os.getenv("RAG_DEPT", "default")).strip() or "default"
+    kb = (body.kb_id or os.getenv("RAG_KB_ID", "default")).strip() or "default"
+    try:
+        return _run_ingest_url_sync(
+            url=body.url,
+            dept_tag=dept,
+            kb_id=kb,
+            parser="url",
+            replace_collection=body.replace_collection,
+            export_manifest=body.export_manifest,
+            export_chunks_pre_embed=body.export_chunks_pre_embed,
+            llm_chunk_summary=body.llm_chunk_summary,
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except RuntimeError as e:
+        _log.error("run_ingest_url RuntimeError → HTTP 503: %s", e, exc_info=True)
+        raise HTTPException(503, str(e)) from e
+
+
+@app.post("/rag/ingest/url/async")
+def rag_ingest_url_async(body: UrlIngestRequest) -> dict[str, Any]:
+    """
+    网页 URL 入库（异步）：立即返回 task_id，客户端轮询 GET /rag/ingest/tasks/{task_id} 查看状态。
+    """
+    if not body.url or not body.url.strip():
+        raise HTTPException(400, "url cannot be empty")
+    if not body.url.startswith(("http://", "https://")):
+        raise HTTPException(400, "url must start with http:// or https://")
+
+    dept = (body.dept_tag or os.getenv("RAG_DEPT", "default")).strip() or "default"
+    kb = (body.kb_id or os.getenv("RAG_KB_ID", "default")).strip() or "default"
+
+    task_id = uuid.uuid4().hex
+    with _INGEST_LOCK:
+        _INGEST_TASKS[task_id] = {
+            "task_id": task_id,
+            "status": "queued",
+            "message": "url task queued",
+            "created_at": _now_ts(),
+            "updated_at": _now_ts(),
+            "elapsed_sec": 0.0,
+            "result": None,
+            "error": None,
+            "error_type": None,
+            "params": {
+                "original_filename": f"url_{body.url[:80]}",
+                "dept_tag": dept,
+                "kb_id": kb,
+                "parser": "url",
+                "replace_collection": body.replace_collection,
+                "export_manifest": body.export_manifest,
+                "export_chunks_pre_embed": body.export_chunks_pre_embed,
+                "llm_chunk_summary": body.llm_chunk_summary,
+            },
+        }
+
+    _start_url_ingest_task(
+        task_id=task_id,
+        payload={
+            "url": body.url,
+            "dept_tag": dept,
+            "kb_id": kb,
+            "parser": "url",
+            "replace_collection": body.replace_collection,
+            "export_manifest": body.export_manifest,
+            "export_chunks_pre_embed": body.export_chunks_pre_embed,
+            "llm_chunk_summary": body.llm_chunk_summary,
+        },
+    )
+    return {"ok": True, "task_id": task_id, "status": "queued"}
+
+
 @app.get("/rag/ingest/tasks/{task_id}")
 def rag_ingest_task_status(task_id: str) -> dict[str, Any]:
     with _INGEST_LOCK:
